@@ -23,25 +23,27 @@ export async function POST(req: NextRequest) {
     browserToken: body.browserToken,
     nickname: body.nickname,
   });
-  const sessions = listSessionsForUser(user.id);
-  const enriched = sessions.map((s) => {
-    const { roles: roleConfigs, topic } = getSessionRolesAndTopic(s);
-    let names: string[] = [];
-    try {
-      names = resolveRoles(roleConfigs).map((r) => r.name);
-    } catch {
-      names = [];
-    }
-    const sum = getSummary(s.id);
-    return {
-      id: s.id,
-      status: s.status,
-      createdAt: s.createdAt,
-      endedAt: s.endedAt,
-      topic,
-      roleNames: names,
-      summary: sum ? JSON.parse(sum.payloadJson) : null,
-    };
-  });
+  const sessions = await listSessionsForUser(user.id);
+  const enriched = await Promise.all(
+    sessions.map(async (s) => {
+      const { roles: roleConfigs, topic } = getSessionRolesAndTopic(s);
+      let names: string[] = [];
+      try {
+        names = resolveRoles(roleConfigs).map((r) => r.name);
+      } catch {
+        names = [];
+      }
+      const sum = await getSummary(s.id);
+      return {
+        id: s.id,
+        status: s.status,
+        createdAt: s.createdAt,
+        endedAt: s.endedAt,
+        topic,
+        roleNames: names,
+        summary: sum ? JSON.parse(sum.payloadJson) : null,
+      };
+    }),
+  );
   return NextResponse.json({ user: { id: user.id, nickname: user.nickname }, sessions: enriched });
 }

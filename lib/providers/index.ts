@@ -5,6 +5,25 @@ export type { ChorusProvider, ChorusMessage, ProviderRole, TokenDelta } from "./
 
 const cache = new Map<string, ChorusProvider>();
 
+const ROLES: readonly ProviderRole[] = ["host", "role", "summary"];
+
+/** Returns a list of human-readable issues, empty if env is healthy. */
+export function validateProviderEnv(): string[] {
+  const issues: string[] = [];
+  let needsOpenAI = false;
+  for (const role of ROLES) {
+    const provider = process.env[`CHORUS_PROVIDER_${role.toUpperCase()}`] || "openai";
+    if (provider === "openai") needsOpenAI = true;
+    else if (provider !== "openai") {
+      issues.push(`unknown provider "${provider}" for ${role}`);
+    }
+  }
+  if (needsOpenAI && !process.env.OPENAI_API_KEY?.trim()) {
+    issues.push("OPENAI_API_KEY is required (set in .env.local)");
+  }
+  return issues;
+}
+
 function envFor(role: ProviderRole) {
   const providerKey = `CHORUS_PROVIDER_${role.toUpperCase()}`;
   const provider = process.env[providerKey] || "openai";

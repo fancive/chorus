@@ -11,6 +11,8 @@ import { runTurn, resetAiStreak, type SseEvent } from "@/lib/scheduler/run";
 import { appendUserMessage, finalizeMessage, getOwnedSession } from "@/lib/db/repo";
 import { sseStream } from "@/lib/sse";
 import { extractBrowserToken } from "@/lib/server/auth";
+import { validateProviderEnv } from "@/lib/providers";
+import { validateDbEnv } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,8 +25,15 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const envIssues = [...validateProviderEnv(), ...validateDbEnv()];
+  if (envIssues.length) {
+    return new Response(
+      JSON.stringify({ error: "env_misconfigured", issues: envIssues }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  }
   const { id } = await params;
-  const session = getOwnedSession(id, extractBrowserToken(req));
+  const session = await getOwnedSession(id, extractBrowserToken(req));
   if (!session) {
     return new Response(JSON.stringify({ error: "session_not_found" }), {
       status: 404,
@@ -52,11 +61,11 @@ export async function POST(
   // with 409 to avoid duplicate scheduling.
   if (userText) {
     const aborted = abortActiveGeneration(id);
-    if (aborted?.messageId) finalizeMessage(aborted.messageId, "interrupted");
+    if (aborted?.messageId) await finalizeMessage(aborted.messageId, "interrupted");
     stealTurnLock(id, lockToken);
     try {
-      appendUserMessage({ sessionId: id, content: userText });
-      resetAiStreak(id);
+      await appendUserMessage({ sessionId: id, content: userText });
+      await resetAiStreak(id);
     } catch (err) {
       releaseTurnLock(id, lockToken);
       throw err;

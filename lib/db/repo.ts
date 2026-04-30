@@ -8,8 +8,8 @@ export const newId = (prefix: string) => `${prefix}_${nanoid(12)}`;
 
 type DbLike = Pick<ReturnType<typeof getDb>, "select">;
 
-function nextSeq(tx: DbLike, sessionId: string): number {
-  const row = tx
+async function nextSeq(tx: DbLike, sessionId: string): Promise<number> {
+  const row = await tx
     .select({ max: sql<number>`COALESCE(MAX(${schema.messages.seq}), 0)` })
     .from(schema.messages)
     .where(eq(schema.messages.sessionId, sessionId))
@@ -28,20 +28,20 @@ export async function ensureUser(input: {
     nickname: trimmedNick || "无名氏",
     browserToken: input.browserToken,
   };
-  // Atomic insert-or-do-nothing on the unique browser_token; then read back
-  // and patch nickname if the caller supplied a different one.
-  db.insert(schema.users)
+  await db
+    .insert(schema.users)
     .values(candidate)
     .onConflictDoNothing({ target: schema.users.browserToken })
     .run();
-  const existing = db
+  const existing = await db
     .select()
     .from(schema.users)
     .where(eq(schema.users.browserToken, input.browserToken))
     .get();
   if (!existing) throw new Error("user upsert failed");
   if (trimmedNick && trimmedNick !== existing.nickname) {
-    db.update(schema.users)
+    await db
+      .update(schema.users)
       .set({ nickname: trimmedNick })
       .where(eq(schema.users.id, existing.id))
       .run();
@@ -57,10 +57,11 @@ export interface CreateSessionInput {
   topic?: string | null;
 }
 
-export function createSession(input: CreateSessionInput) {
+export async function createSession(input: CreateSessionInput) {
   const db = getDb();
   const id = newId("sess");
-  db.insert(schema.sessions)
+  await db
+    .insert(schema.sessions)
     .values({
       id,
       userId: input.userId,
@@ -71,10 +72,12 @@ export function createSession(input: CreateSessionInput) {
       }),
     })
     .run();
-  return db.select().from(schema.sessions).where(eq(schema.sessions.id, id)).get()!;
+  const row = await db.select().from(schema.sessions).where(eq(schema.sessions.id, id)).get();
+  if (!row) throw new Error("session insert lost");
+  return row;
 }
 
-export function getSession(id: string) {
+export async function getSession(id: string) {
   const db = getDb();
   return db
     .select()
@@ -83,7 +86,7 @@ export function getSession(id: string) {
     .get();
 }
 
-export function getUserByBrowserToken(browserToken: string) {
+export async function getUserByBrowserToken(browserToken: string) {
   const db = getDb();
   return db
     .select()
@@ -92,11 +95,11 @@ export function getUserByBrowserToken(browserToken: string) {
     .get();
 }
 
-export function getOwnedSession(sessionId: string, browserToken: string) {
+export async function getOwnedSession(sessionId: string, browserToken: string) {
   if (!browserToken) return null;
-  const session = getSession(sessionId);
+  const session = await getSession(sessionId);
   if (!session) return null;
-  const user = getUserByBrowserToken(browserToken);
+  const user = await getUserByBrowserToken(browserToken);
   if (!user || user.id !== session.userId) return null;
   return session;
 }
@@ -120,7 +123,7 @@ export function getSessionRolesAndTopic(sessionRow: typeof schema.sessions.$infe
   }
 }
 
-export function updateSessionStatus(
+export async function updateSessionStatus(
   id: string,
   patch: Partial<{
     status: typeof schema.sessions.$inferSelect["status"];
@@ -130,10 +133,10 @@ export function updateSessionStatus(
   }>,
 ) {
   const db = getDb();
-  db.update(schema.sessions).set(patch).where(eq(schema.sessions.id, id)).run();
+  await db.update(schema.sessions).set(patch).where(eq(schema.sessions.id, id)).run();
 }
 
-export function listMessages(sessionId: string) {
+export async function listMessages(sessionId: string) {
   const db = getDb();
   return db
     .select()
@@ -143,12 +146,13 @@ export function listMessages(sessionId: string) {
     .all();
 }
 
-export function appendUserMessage(input: { sessionId: string; content: string }) {
+export async function appendUserMessage(input: { sessionId: string; content: string }) {
   const db = getDb();
   const id = newId("msg");
-  db.transaction((tx) => {
-    const seq = nextSeq(tx, input.sessionId);
-    tx.insert(schema.messages)
+  await db.transaction(async (tx) => {
+    const seq = await nextSeq(tx, input.sessionId);
+    await tx
+      .insert(schema.messages)
       .values({
         id,
         sessionId: input.sessionId,
@@ -160,19 +164,22 @@ export function appendUserMessage(input: { sessionId: string; content: string })
       })
       .run();
   });
-  return db.select().from(schema.messages).where(eq(schema.messages.id, id)).get()!;
+  const row = await db.select().from(schema.messages).where(eq(schema.messages.id, id)).get();
+  if (!row) throw new Error("user message insert lost");
+  return row;
 }
 
-export function createStreamingMessage(input: {
+export async function createStreamingMessage(input: {
   sessionId: string;
   actor: "host" | "role";
   actorRoleIndex?: number | null;
 }) {
   const db = getDb();
   const id = newId("msg");
-  db.transaction((tx) => {
-    const seq = nextSeq(tx, input.sessionId);
-    tx.insert(schema.messages)
+  await db.transaction(async (tx) => {
+    const seq = await nextSeq(tx, input.sessionId);
+    await tx
+      .insert(schema.messages)
       .values({
         id,
         sessionId: input.sessionId,
@@ -185,37 +192,41 @@ export function createStreamingMessage(input: {
       })
       .run();
   });
-  return db.select().from(schema.messages).where(eq(schema.messages.id, id)).get()!;
+  const row = await db.select().from(schema.messages).where(eq(schema.messages.id, id)).get();
+  if (!row) throw new Error("streaming message insert lost");
+  return row;
 }
 
-export function appendDelta(messageId: string, delta: string) {
+export async function appendDelta(messageId: string, delta: string) {
   const db = getDb();
-  db.transaction((tx) => {
-    const row = tx
+  await db.transaction(async (tx) => {
+    const row = await tx
       .select({ content: schema.messages.content, revision: schema.messages.revision })
       .from(schema.messages)
       .where(eq(schema.messages.id, messageId))
       .get();
     if (!row) throw new Error("message not found");
-    tx.update(schema.messages)
+    await tx
+      .update(schema.messages)
       .set({ content: row.content + delta, revision: row.revision + 1 })
       .where(eq(schema.messages.id, messageId))
       .run();
   });
 }
 
-export function finalizeMessage(
+export async function finalizeMessage(
   messageId: string,
   status: "completed" | "interrupted",
 ) {
   const db = getDb();
-  db.update(schema.messages)
+  await db
+    .update(schema.messages)
     .set({ status })
     .where(eq(schema.messages.id, messageId))
     .run();
 }
 
-export function findActiveStreamingMessages(sessionId: string) {
+export async function findActiveStreamingMessages(sessionId: string) {
   const db = getDb();
   return db
     .select()
@@ -229,7 +240,7 @@ export function findActiveStreamingMessages(sessionId: string) {
     .all();
 }
 
-export function recordGeneration(input: {
+export async function recordGeneration(input: {
   sessionId: string;
   messageId: string | null;
   provider: string;
@@ -239,7 +250,8 @@ export function recordGeneration(input: {
 }) {
   const db = getDb();
   const id = newId("gen");
-  db.insert(schema.generations)
+  await db
+    .insert(schema.generations)
     .values({
       id,
       sessionId: input.sessionId,
@@ -254,22 +266,24 @@ export function recordGeneration(input: {
   return id;
 }
 
-export function finalizeGeneration(
+export async function finalizeGeneration(
   id: string,
   status: "completed" | "aborted" | "failed",
   errorMessage?: string,
 ) {
   const db = getDb();
-  db.update(schema.generations)
+  await db
+    .update(schema.generations)
     .set({ status, endedAt: new Date(), errorMessage: errorMessage ?? null })
     .where(eq(schema.generations.id, id))
     .run();
 }
 
-export function saveSummary(sessionId: string, payload: unknown) {
+export async function saveSummary(sessionId: string, payload: unknown) {
   const db = getDb();
   const id = newId("sum");
-  db.insert(schema.summaries)
+  await db
+    .insert(schema.summaries)
     .values({
       id,
       sessionId,
@@ -279,7 +293,7 @@ export function saveSummary(sessionId: string, payload: unknown) {
   return id;
 }
 
-export function getSummary(sessionId: string) {
+export async function getSummary(sessionId: string) {
   const db = getDb();
   return db
     .select()
@@ -290,7 +304,7 @@ export function getSummary(sessionId: string) {
     .get();
 }
 
-export function listSessionsForUser(userId: string) {
+export async function listSessionsForUser(userId: string) {
   const db = getDb();
   return db
     .select()

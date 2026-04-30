@@ -4,6 +4,8 @@ import { ensureUser, createSession } from "@/lib/db/repo";
 import { MODES } from "@/lib/scheduler/modes";
 import { DimensionSelection } from "@/lib/prompts/dimensions";
 import { resolveRoles } from "@/lib/prompts/role-builder";
+import { validateProviderEnv } from "@/lib/providers";
+import { validateDbEnv } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -31,6 +33,13 @@ const CreateRoomBody = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const envIssues = [...validateProviderEnv(), ...validateDbEnv()];
+  if (envIssues.length) {
+    return NextResponse.json(
+      { error: "env_misconfigured", issues: envIssues },
+      { status: 503 },
+    );
+  }
   const json = await req.json().catch(() => null);
   const parsed = CreateRoomBody.safeParse(json);
   if (!parsed.success) {
@@ -72,7 +81,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const session = createSession({
+  const session = await createSession({
     userId: user.id,
     mode: body.mode,
     roleConfigs,

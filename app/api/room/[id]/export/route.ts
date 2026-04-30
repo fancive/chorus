@@ -11,14 +11,13 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getOwnedSession(id, extractBrowserToken(req));
+  const session = await getOwnedSession(id, extractBrowserToken(req));
   if (!session) {
     return new Response("not found", { status: 404 });
   }
   const { roles: roleConfigs, topic } = getSessionRolesAndTopic(session);
   const roles = resolveRoles(roleConfigs);
-  const messages = listMessages(id);
-  const summary = getSummary(id);
+  const [messages, summary] = await Promise.all([listMessages(id), getSummary(id)]);
 
   const isDebate = roles.length > 1;
   const speakerName = (m: { actor: string; actorRoleIndex: number | null }) => {

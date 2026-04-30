@@ -69,7 +69,7 @@ function isAbortLike(err: unknown, signal?: AbortSignal): boolean {
 
 export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise<void> {
   while (!signal?.aborted) {
-    const session = getSession(sessionId);
+    const session = await getSession(sessionId);
     if (!session) {
       emit({ type: "error", message: "session not found" });
       return;
@@ -87,7 +87,7 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
         ? baseRoles.map((_, i) => withDebateContext(baseRoles, i))
         : baseRoles;
     const hostIdentity = buildHostIdentity(mode, baseRoles.length);
-    const history = listMessages(sessionId);
+    const history = await listMessages(sessionId);
     const isColdStart = history.length === 0;
     const lastMessage = history[history.length - 1];
     const userJustSpoke = lastMessage?.actor === "user";
@@ -120,7 +120,7 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
     const isDebate = baseRoles.length > 1;
     const maxStreak = isDebate ? MAX_AI_STREAK_DEBATE : MAX_AI_STREAK_SOLO;
     if (session.aiStreak >= maxStreak && !userJustSpoke) {
-      updateSessionStatus(sessionId, { status: "await_user" });
+      await updateSessionStatus(sessionId, { status: "await_user" });
       emit({ type: "await_user" });
       return;
     }
@@ -130,9 +130,9 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
       decision = { next: "host", reason: "cold-start: host opens", statusBarHint: "" };
       emit({ type: "schedule", nextSpeaker: "host", statusBarHint: "" });
     } else {
-      updateSessionStatus(sessionId, { status: "scheduling" });
+      await updateSessionStatus(sessionId, { status: "scheduling" });
       const schedulerProvider = getProvider("host");
-      const schedulerGenerationId = recordGeneration({
+      const schedulerGenerationId = await recordGeneration({
         sessionId,
         messageId: null,
         provider: schedulerProvider.name,
@@ -178,14 +178,14 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
           messages,
           abortSignal: schedulerAbort.signal,
         });
-        finalizeGeneration(schedulerGenerationId, "completed");
+        await finalizeGeneration(schedulerGenerationId, "completed");
         decision = {
           next: result.next_speaker as NextSpeakerTag,
           reason: result.reason,
           statusBarHint: result.status_bar_hint || "",
         };
       } catch (err) {
-        finalizeGeneration(
+        await finalizeGeneration(
           schedulerGenerationId,
           isAbortLike(err, schedulerAbort.signal) ? "aborted" : "failed",
           isAbortLike(err, schedulerAbort.signal)
@@ -195,11 +195,11 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
               : String(err),
         );
         if (isAbortLike(err, schedulerAbort.signal)) {
-          updateSessionStatus(sessionId, { status: "await_user" });
+          await updateSessionStatus(sessionId, { status: "await_user" });
           return;
         }
         emit({ type: "error", message: "scheduler failed" });
-        updateSessionStatus(sessionId, { status: "await_user" });
+        await updateSessionStatus(sessionId, { status: "await_user" });
         emit({ type: "await_user" });
         return;
       } finally {
@@ -242,7 +242,7 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
 
     if (signal?.aborted) return;
     if (decision.next === "await_user") {
-      updateSessionStatus(sessionId, { status: "await_user" });
+      await updateSessionStatus(sessionId, { status: "await_user" });
       emit({ type: "await_user" });
       return;
     }
@@ -251,22 +251,22 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
     const roleIndex = isHost ? null : parseRoleIndex(decision.next);
     if (!isHost && (roleIndex === null || roleIndex >= baseRoles.length)) {
       emit({ type: "error", message: `invalid role index in scheduler decision: ${decision.next}` });
-      updateSessionStatus(sessionId, { status: "await_user" });
+      await updateSessionStatus(sessionId, { status: "await_user" });
       emit({ type: "await_user" });
       return;
     }
     const actor: "host" | "role" = isHost ? "host" : "role";
 
-    updateSessionStatus(sessionId, {
+    await updateSessionStatus(sessionId, {
       status: actor === "host" ? "speaking_host" : "speaking_role",
     });
-    const message = createStreamingMessage({
+    const message = await createStreamingMessage({
       sessionId,
       actor,
       actorRoleIndex: roleIndex,
     });
     const provider = getProvider(actor === "host" ? "host" : "role");
-    const generationId = recordGeneration({
+    const generationId = await recordGeneration({
       sessionId,
       messageId: message.id,
       provider: provider.name,
@@ -316,16 +316,18 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
     let aborted = false;
     let completed = false;
     let revision = 0;
-    let any = false;
     let buffer = "";
-    const FLUSH_CHARS = 48;
-    const flush = () => {
+    const FLUSH_CHARS = 128;
+    const FLUSH_MS = 200;
+    let lastFlushAt = Date.now();
+    const flush = async () => {
       if (!buffer) return;
       const chunk = buffer;
       buffer = "";
-      appendDelta(message.id, chunk);
+      await appendDelta(message.id, chunk);
       revision += 1;
       emit({ type: "delta", messageId: message.id, revision, text: chunk });
+      lastFlushAt = Date.now();
     };
     try {
       for await (const delta of provider.streamText({
@@ -338,48 +340,49 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
           break;
         }
         if (!delta.text) continue;
-        any = true;
         buffer += delta.text;
-        if (buffer.length >= FLUSH_CHARS) flush();
+        if (buffer.length >= FLUSH_CHARS || Date.now() - lastFlushAt >= FLUSH_MS) {
+          await flush();
+        }
       }
-      flush();
+      await flush();
       if (aborted || abort.signal.aborted) {
-        flush();
-        finalizeMessage(message.id, "interrupted");
-        finalizeGeneration(generationId, "aborted");
+        await flush();
+        await finalizeMessage(message.id, "interrupted");
+        await finalizeGeneration(generationId, "aborted");
         emit({ type: "message_end", messageId: message.id, status: "interrupted" });
         // Status was set to speaking_*; restore so the next caller sees a sane state.
-        const fresh = getSession(sessionId);
+        const fresh = await getSession(sessionId);
         if (fresh && fresh.status !== "ended" && fresh.status !== "summarizing") {
-          updateSessionStatus(sessionId, { status: "await_user" });
+          await updateSessionStatus(sessionId, { status: "await_user" });
         }
         return;
       }
-      finalizeMessage(message.id, "completed");
-      finalizeGeneration(generationId, "completed");
+      await finalizeMessage(message.id, "completed");
+      await finalizeGeneration(generationId, "completed");
       emit({ type: "message_end", messageId: message.id, status: "completed" });
       const newStreak = session.aiStreak + 1;
-      updateSessionStatus(sessionId, { aiStreak: newStreak, status: "await_user" });
+      await updateSessionStatus(sessionId, { aiStreak: newStreak, status: "await_user" });
       completed = true;
     } catch (err) {
-      flush();
+      await flush();
       if (isAbortLike(err, abort.signal)) {
-        finalizeMessage(message.id, "interrupted");
-        finalizeGeneration(generationId, "aborted");
+        await finalizeMessage(message.id, "interrupted");
+        await finalizeGeneration(generationId, "aborted");
         emit({ type: "message_end", messageId: message.id, status: "interrupted" });
-        const fresh = getSession(sessionId);
+        const fresh = await getSession(sessionId);
         if (fresh && fresh.status !== "ended" && fresh.status !== "summarizing") {
-          updateSessionStatus(sessionId, { status: "await_user" });
+          await updateSessionStatus(sessionId, { status: "await_user" });
         }
         return;
       }
-      finalizeMessage(message.id, any ? "interrupted" : "interrupted");
-      finalizeGeneration(
+      await finalizeMessage(message.id, "interrupted");
+      await finalizeGeneration(
         generationId,
         "failed",
         err instanceof Error ? err.message : String(err),
       );
-      updateSessionStatus(sessionId, { status: "await_user" });
+      await updateSessionStatus(sessionId, { status: "await_user" });
       emit({
         type: "error",
         message: err instanceof Error ? err.message : String(err),
@@ -394,6 +397,6 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
   }
 }
 
-export function resetAiStreak(sessionId: string) {
-  updateSessionStatus(sessionId, { aiStreak: 0, lastUserAt: new Date() });
+export async function resetAiStreak(sessionId: string) {
+  await updateSessionStatus(sessionId, { aiStreak: 0, lastUserAt: new Date() });
 }

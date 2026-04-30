@@ -16,7 +16,8 @@ import { buildHostIdentity } from "@/lib/prompts/host-identity";
 import { resolveRoles } from "@/lib/prompts/role-builder";
 import { SUMMARY_TASK, SummaryOutput, safeParseSummary } from "@/lib/prompts/host-summary";
 import { projectForSummary } from "@/lib/transcript/projection";
-import { getProvider } from "@/lib/providers";
+import { getProvider, validateProviderEnv } from "@/lib/providers";
+import { validateDbEnv } from "@/lib/db";
 import { normalizeMode } from "@/lib/scheduler/modes";
 import { extractBrowserToken } from "@/lib/server/auth";
 
@@ -26,12 +27,19 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const envIssues = [...validateProviderEnv(), ...validateDbEnv()];
+  if (envIssues.length) {
+    return NextResponse.json(
+      { error: "env_misconfigured", issues: envIssues },
+      { status: 503 },
+    );
+  }
   const { id } = await params;
-  const session = getOwnedSession(id, extractBrowserToken(req));
+  const session = await getOwnedSession(id, extractBrowserToken(req));
   if (!session) {
     return NextResponse.json({ error: "session_not_found" }, { status: 404 });
   }
-  const existingSummary = getSummary(id);
+  const existingSummary = await getSummary(id);
   if (session.status === "ended" && existingSummary) {
     return NextResponse.json({
       ok: true,
@@ -42,20 +50,20 @@ export async function POST(
   // Stop any active stream and mark partial as interrupted.
   const aborted = abortActiveGeneration(id);
   if (aborted?.messageId) {
-    finalizeMessage(aborted.messageId, "interrupted");
+    await finalizeMessage(aborted.messageId, "interrupted");
   }
-  for (const m of findActiveStreamingMessages(id)) {
-    finalizeMessage(m.id, "interrupted");
+  for (const m of await findActiveStreamingMessages(id)) {
+    await finalizeMessage(m.id, "interrupted");
   }
 
-  updateSessionStatus(id, { status: "summarizing" });
+  await updateSessionStatus(id, { status: "summarizing" });
   const { roles: roleConfigs } = getSessionRolesAndTopic(session);
   const roles = resolveRoles(roleConfigs);
   const hostIdentity = buildHostIdentity(normalizeMode(session.mode), roles.length);
-  const history = listMessages(id);
+  const history = await listMessages(id);
 
   const provider = getProvider("summary");
-  const generationId = recordGeneration({
+  const generationId = await recordGeneration({
     sessionId: id,
     messageId: null,
     provider: provider.name,
@@ -73,17 +81,17 @@ export async function POST(
       purpose: "summary",
       messages,
     });
-    finalizeGeneration(generationId, "completed");
-    saveSummary(id, result);
-    updateSessionStatus(id, { status: "ended", endedAt: new Date() });
+    await finalizeGeneration(generationId, "completed");
+    await saveSummary(id, result);
+    await updateSessionStatus(id, { status: "ended", endedAt: new Date() });
     return NextResponse.json({ ok: true, summary: result });
   } catch (err) {
-    finalizeGeneration(
+    await finalizeGeneration(
       generationId,
       "failed",
       err instanceof Error ? err.message : String(err),
     );
-    updateSessionStatus(id, {
+    await updateSessionStatus(id, {
       status: session.status === "ended" ? "ended" : "await_user",
       endedAt: session.endedAt,
     });
