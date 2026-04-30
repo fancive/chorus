@@ -58,5 +58,34 @@ export function resolveRole(config: RoleConfig): ResolvedRole {
   };
 }
 
+export function resolveRoles(configs: readonly RoleConfig[]): ResolvedRole[] {
+  return configs.map((c) => resolveRole(c));
+}
+
+/**
+ * Decorate a role's base systemPrompt with awareness of the other participants
+ * in the room. The role at `selfIndex` will be told the names of the others
+ * and that it can react to / disagree with them.
+ */
+export function withDebateContext(
+  roles: readonly ResolvedRole[],
+  selfIndex: number,
+): ResolvedRole {
+  const self = roles[selfIndex];
+  const others = roles.filter((_, i) => i !== selfIndex);
+  if (others.length === 0) return self;
+  const otherNames = others.map((r) => `「${r.name}」`).join("、");
+  const ctx = `
+
+---
+本场是辩论场，除你之外还有其他参会人：${otherNames}。
+
+- 你可以直接回应他们刚才的发言：认同、反驳、补充、追问
+- 提到他们时用名字称呼，让用户能跟得上谁在跟谁说话
+- 不要重复别人已经说过的话，要么推进，要么挑战
+- 仍然保持你自己的人设，不要被别人带跑`;
+  return { ...self, systemPrompt: self.systemPrompt + ctx };
+}
+
 export { ROLE_TEMPLATES };
 export type { RoleTemplate };

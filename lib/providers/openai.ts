@@ -14,8 +14,8 @@ export class OpenAIProvider implements ChorusProvider {
   readonly model: string;
   private client: OpenAI;
 
-  constructor(opts: { apiKey: string; model: string }) {
-    this.client = new OpenAI({ apiKey: opts.apiKey });
+  constructor(opts: { apiKey: string; model: string; baseURL?: string }) {
+    this.client = new OpenAI({ apiKey: opts.apiKey, baseURL: opts.baseURL });
     this.model = opts.model;
   }
 
@@ -27,23 +27,49 @@ export class OpenAIProvider implements ChorusProvider {
     };
   }
 
+  private extraBody(): Record<string, unknown> {
+    // Doubao seed/thinking models default to thinking-on, which burns 2-9s of latency
+    // even on trivial scheduler/structured calls. Disable for all our use cases.
+    if (/^doubao-seed-/i.test(this.model)) {
+      return { thinking: { type: "disabled" } };
+    }
+    return {};
+  }
+
   async generateJson<TSchema extends z.ZodTypeAny>(
     args: GenerateJsonArgs<TSchema>,
   ): Promise<z.infer<TSchema>> {
-    const completion = await this.client.beta.chat.completions.parse(
-      {
-        model: this.model,
-        messages: args.messages,
-        response_format: zodResponseFormat(args.schema, args.schemaName),
-        temperature: args.purpose === "scheduler" ? 0 : 0.4,
-      },
-      { signal: args.abortSignal },
+    const attempt = async (extraNote: string | null) => {
+      const messages = extraNote
+        ? [...args.messages, { role: "system" as const, content: extraNote }]
+        : args.messages;
+      const completion = await this.client.beta.chat.completions.parse(
+        {
+          model: this.model,
+          messages,
+          response_format: zodResponseFormat(args.schema, args.schemaName),
+          temperature: args.purpose === "scheduler" ? 0 : 0.4,
+          ...(this.extraBody() as Record<string, never>),
+        },
+        { signal: args.abortSignal },
+      );
+      return completion.choices[0]?.message.parsed ?? null;
+    };
+
+    try {
+      const parsed = await attempt(null);
+      if (parsed) return parsed;
+    } catch (err) {
+      if (args.abortSignal?.aborted) throw err;
+      // fall through to one retry with stricter instruction
+    }
+    const retry = await attempt(
+      `严格按照名为 ${args.schemaName} 的 JSON Schema 输出，仅输出合法 JSON 对象，不要任何解释。`,
     );
-    const parsed = completion.choices[0]?.message.parsed;
-    if (!parsed) {
+    if (!retry) {
       throw new Error(`OpenAI returned no parsed payload for ${args.schemaName}`);
     }
-    return parsed;
+    return retry;
   }
 
   async *streamText(args: StreamTextArgs): AsyncIterable<TokenDelta> {
@@ -53,6 +79,7 @@ export class OpenAIProvider implements ChorusProvider {
         messages: args.messages,
         stream: true,
         temperature: 0.7,
+        ...(this.extraBody() as Record<string, never>),
       },
       { signal: args.abortSignal },
     );

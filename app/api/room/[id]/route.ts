@@ -1,40 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession, getSessionRoleAndTopic, listMessages, getSummary } from "@/lib/db/repo";
-import { resolveRole } from "@/lib/prompts/role-builder";
+import { getOwnedSession, getSessionRolesAndTopic, listMessages, getSummary } from "@/lib/db/repo";
+import { resolveRoles } from "@/lib/prompts/role-builder";
+import { normalizeMode } from "@/lib/scheduler/modes";
+import { extractBrowserToken } from "@/lib/server/auth";
+import { safeParseSummary } from "@/lib/prompts/host-summary";
 
 export const runtime = "nodejs";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getOwnedSession(id, extractBrowserToken(req));
   if (!session) {
     return NextResponse.json({ error: "session_not_found" }, { status: 404 });
   }
-  const { role: roleConfig, topic } = getSessionRoleAndTopic(session);
-  const role = resolveRole(roleConfig);
+  const { roles: roleConfigs, topic } = getSessionRolesAndTopic(session);
+  const roles = resolveRoles(roleConfigs);
   const messages = listMessages(id);
   const summary = getSummary(id);
   return NextResponse.json({
     session: {
       id: session.id,
-      mode: session.mode,
+      mode: normalizeMode(session.mode),
       status: session.status,
       topic,
-      role: { name: role.name, initials: role.initials, color: role.color },
+      roles: roles.map((r) => ({ name: r.name, initials: r.initials, color: r.color })),
       createdAt: session.createdAt,
       endedAt: session.endedAt,
     },
     messages: messages.map((m) => ({
       id: m.id,
       actor: m.actor,
+      actorRoleIndex: m.actorRoleIndex,
       content: m.content,
       status: m.status,
       revision: m.revision,
       createdAt: m.createdAt,
     })),
-    summary: summary ? JSON.parse(summary.payloadJson) : null,
+    summary: summary ? safeParseSummary(summary.payloadJson) : null,
   });
 }

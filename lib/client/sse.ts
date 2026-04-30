@@ -1,9 +1,12 @@
 "use client";
 
+import { getOrCreateBrowserToken } from "./identity";
+
 export interface SseTurnHandlers {
   onEvent: (event: unknown) => void;
+  onAccept?: () => void;
   onClose?: () => void;
-  onError?: (err: unknown) => void;
+  onError?: (err: unknown, phase: "pre" | "stream") => void;
 }
 
 export async function postTurn(
@@ -12,16 +15,28 @@ export async function postTurn(
   handlers: SseTurnHandlers,
   signal: AbortSignal,
 ): Promise<void> {
-  const resp = await fetch(`/api/room/${sessionId}/turn`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (!resp.ok || !resp.body) {
-    handlers.onError?.(new Error(`turn failed: ${resp.status}`));
+  let resp: Response;
+  try {
+    resp = await fetch(`/api/room/${sessionId}/turn`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-chorus-token": getOrCreateBrowserToken(),
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    if (!signal.aborted) handlers.onError?.(err, "pre");
+    handlers.onClose?.();
     return;
   }
+  if (!resp.ok || !resp.body) {
+    handlers.onError?.(new Error(`turn failed: ${resp.status}`), "pre");
+    handlers.onClose?.();
+    return;
+  }
+  handlers.onAccept?.();
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -41,7 +56,7 @@ export async function postTurn(
           try {
             handlers.onEvent(JSON.parse(dataLine.slice(6)));
           } catch (err) {
-            handlers.onError?.(err);
+            handlers.onError?.(err, "stream");
           }
         }
         idx = buffer.indexOf("\n\n");
@@ -49,7 +64,7 @@ export async function postTurn(
     }
   } catch (err) {
     if ((err as Error).name !== "AbortError") {
-      handlers.onError?.(err);
+      handlers.onError?.(err, "stream");
     }
   } finally {
     handlers.onClose?.();

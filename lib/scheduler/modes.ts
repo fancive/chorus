@@ -8,7 +8,20 @@ export const MODE_LABEL: Record<Mode, string> = {
 };
 
 export const MODE_DESCRIPTION: Record<Mode, string> = {
-  interview: "主持人采访角色，你随时插话",
-  dialogue: "你和角色对话，主持人偶尔引导",
-  coach: "主持人帮你拆问题，角色从某种视角给反馈",
+  interview: "主持人像记者，更多把问题抛给参会人",
+  dialogue: "参会人和你直接对话，主持人轻控节奏",
+  coach: "主持人帮助拆解问题，参会人提供具体反馈",
 };
+
+export const MODE_OPTIONS = MODES.map((id) => ({
+  id,
+  label: MODE_LABEL[id],
+  description: MODE_DESCRIPTION[id],
+}));
+
+export function normalizeMode(value: string | null | undefined): Mode {
+  if (value === "interviewee") return "interview";
+  if (value === "participant") return "dialogue";
+  if (MODES.includes(value as Mode)) return value as Mode;
+  return "dialogue";
+}

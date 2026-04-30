@@ -1,18 +1,14 @@
 import { NextResponse } from "next/server";
-import { ROLE_TEMPLATES } from "@/lib/prompts/role-templates";
+import { PEOPLE_TEMPLATES } from "@/lib/prompts/role-templates";
 import { DIMENSIONS } from "@/lib/prompts/dimensions";
-import { MODES, MODE_DESCRIPTION, MODE_LABEL } from "@/lib/scheduler/modes";
+import { TOPIC_POOL } from "@/lib/prompts/topics";
+import { MODE_OPTIONS } from "@/lib/scheduler/modes";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   return NextResponse.json({
-    modes: MODES.map((m) => ({
-      id: m,
-      label: MODE_LABEL[m],
-      description: MODE_DESCRIPTION[m],
-    })),
-    templates: ROLE_TEMPLATES.map((t) => ({
+    people: PEOPLE_TEMPLATES.map((t) => ({
       id: t.id,
       name: t.name,
       blurb: t.blurb,
@@ -20,5 +16,7 @@ export async function GET() {
       color: t.color,
     })),
     dimensions: DIMENSIONS,
+    topics: TOPIC_POOL,
+    modes: MODE_OPTIONS,
   });
 }

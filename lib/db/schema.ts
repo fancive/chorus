@@ -22,7 +22,9 @@ export const sessions = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id),
-    mode: text("mode", { enum: ["interview", "dialogue", "coach"] }).notNull(),
+    mode: text("mode", {
+      enum: ["interview", "dialogue", "coach", "interviewee", "participant"],
+    }).notNull(),
     roleConfigJson: text("role_config_json").notNull(),
     status: text("status", {
       enum: [
@@ -57,6 +59,7 @@ export const messages = sqliteTable(
       .notNull()
       .references(() => sessions.id),
     actor: text("actor", { enum: ["user", "host", "role"] }).notNull(),
+    actorRoleIndex: integer("actor_role_index"),
     content: text("content").notNull().default(""),
     status: text("status", {
       enum: ["streaming", "completed", "interrupted"],
@@ -64,13 +67,14 @@ export const messages = sqliteTable(
       .notNull()
       .default("completed"),
     revision: integer("revision").notNull().default(0),
+    seq: integer("seq").notNull().default(0),
     metaJson: text("meta_json"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
   (t) => ({
-    sessionIdx: index("messages_session_idx").on(t.sessionId, t.createdAt),
+    sessionSeqIdx: index("messages_session_seq_idx").on(t.sessionId, t.seq),
   }),
 );
 
@@ -85,6 +89,7 @@ export const generations = sqliteTable("generations", {
   purpose: text("purpose", {
     enum: ["scheduler", "speaker", "summary"],
   }).notNull(),
+  actorRoleIndex: integer("actor_role_index"),
   status: text("status", {
     enum: ["pending", "streaming", "completed", "aborted", "failed"],
   })

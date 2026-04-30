@@ -1,47 +1,49 @@
 import { NextRequest } from "next/server";
-import { getSession, getSessionRoleAndTopic, getSummary, listMessages } from "@/lib/db/repo";
-import { resolveRole } from "@/lib/prompts/role-builder";
-import { MODE_LABEL } from "@/lib/scheduler/modes";
+import { getOwnedSession, getSessionRolesAndTopic, getSummary, listMessages } from "@/lib/db/repo";
+import { resolveRoles } from "@/lib/prompts/role-builder";
+import { extractBrowserToken } from "@/lib/server/auth";
+import { safeParseSummary } from "@/lib/prompts/host-summary";
 
 export const runtime = "nodejs";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getOwnedSession(id, extractBrowserToken(req));
   if (!session) {
     return new Response("not found", { status: 404 });
   }
-  const { role: roleConfig, topic } = getSessionRoleAndTopic(session);
-  const role = resolveRole(roleConfig);
+  const { roles: roleConfigs, topic } = getSessionRolesAndTopic(session);
+  const roles = resolveRoles(roleConfigs);
   const messages = listMessages(id);
   const summary = getSummary(id);
+
+  const isDebate = roles.length > 1;
+  const speakerName = (m: { actor: string; actorRoleIndex: number | null }) => {
+    if (m.actor === "user") return "你";
+    if (m.actor === "host") return "主持人";
+    const idx = m.actorRoleIndex ?? 0;
+    return roles[idx]?.name ?? `参会人${idx}`;
+  };
 
   const lines: string[] = [];
   lines.push(`# Chorus 对话场 — 会话总结`);
   lines.push("");
-  lines.push(`- 模式：${MODE_LABEL[session.mode]}`);
-  lines.push(`- 角色：${role.name}`);
+  lines.push(`- 参会人：${roles.map((r) => r.name).join(" / ")}`);
   if (topic) lines.push(`- 话题：${topic}`);
   lines.push(`- 时间：${new Date(session.createdAt).toLocaleString("zh-CN")}`);
   lines.push("");
 
-  if (summary) {
-    const payload = JSON.parse(summary.payloadJson) as {
-      recap: string;
-      role_observations: string[];
-      user_highlights: string[];
-      quotes: { speaker: string; text: string }[];
-      follow_up_topics: string[];
-    };
+  const payload = summary ? safeParseSummary(summary.payloadJson) : null;
+  if (payload) {
     lines.push(`## 本轮聊了什么`);
     lines.push("");
     lines.push(payload.recap);
     lines.push("");
     if (payload.role_observations.length) {
-      lines.push(`## ${role.name}的关键观点`);
+      lines.push(isDebate ? `## 参会人的关键观点` : `## ${roles[0].name}的关键观点`);
       lines.push("");
       payload.role_observations.forEach((s) => lines.push(`- ${s}`));
       lines.push("");
@@ -55,7 +57,9 @@ export async function GET(
     if (payload.quotes.length) {
       lines.push(`## 金句`);
       lines.push("");
-      payload.quotes.forEach((q) => lines.push(`> ${q.text} — ${q.speaker === "role" ? role.name : q.speaker === "host" ? "主持人" : "你"}`));
+      payload.quotes.forEach((q) => {
+        lines.push(`> ${q.text} — ${q.speaker}`);
+      });
       lines.push("");
     }
     if (payload.follow_up_topics.length) {
@@ -71,9 +75,7 @@ export async function GET(
   lines.push("");
   for (const m of messages) {
     if (!m.content.trim()) continue;
-    const tag =
-      m.actor === "user" ? "**你**" : m.actor === "host" ? "**主持人**" : `**${role.name}**`;
-    lines.push(`${tag}：${m.content}${m.status === "interrupted" ? " *（被打断）*" : ""}`);
+    lines.push(`**${speakerName(m)}**：${m.content}${m.status === "interrupted" ? " *（被打断）*" : ""}`);
     lines.push("");
   }
 
@@ -82,7 +84,7 @@ export async function GET(
   return new Response(md, {
     headers: {
       "Content-Type": "text/markdown; charset=utf-8",
-      "Content-Disposition": `attachment; filename=\"${filename}\"`,
+      "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });
 }

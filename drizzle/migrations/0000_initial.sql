@@ -5,6 +5,7 @@ CREATE TABLE `generations` (
 	`provider` text NOT NULL,
 	`model` text NOT NULL,
 	`purpose` text NOT NULL,
+	`actor_role_index` integer,
 	`status` text DEFAULT 'pending' NOT NULL,
 	`error_message` text,
 	`started_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
@@ -16,15 +17,17 @@ CREATE TABLE `messages` (
 	`id` text PRIMARY KEY NOT NULL,
 	`session_id` text NOT NULL,
 	`actor` text NOT NULL,
+	`actor_role_index` integer,
 	`content` text DEFAULT '' NOT NULL,
 	`status` text DEFAULT 'completed' NOT NULL,
 	`revision` integer DEFAULT 0 NOT NULL,
+	`seq` integer DEFAULT 0 NOT NULL,
 	`meta_json` text,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	FOREIGN KEY (`session_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
-CREATE INDEX `messages_session_idx` ON `messages` (`session_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `messages_session_seq_idx` ON `messages` (`session_id`,`seq`);--> statement-breakpoint
 CREATE TABLE `sessions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ensureUser, createSession } from "@/lib/db/repo";
 import { MODES } from "@/lib/scheduler/modes";
 import { DimensionSelection } from "@/lib/prompts/dimensions";
+import { resolveRoles } from "@/lib/prompts/role-builder";
 
 export const runtime = "nodejs";
 
@@ -17,17 +18,20 @@ const CustomRole = z.object({
   color: z.string().optional(),
   dimensions: DimensionSelection,
 });
+const RoleEntry = z.discriminatedUnion("kind", [TemplateRole, CustomRole]);
 
 const CreateRoomBody = z.object({
   browserToken: z.string().min(8),
   nickname: z.string().optional(),
-  mode: z.enum(MODES),
+  mode: z.enum(MODES).default("dialogue"),
   topic: z.string().max(300).optional(),
-  role: z.discriminatedUnion("kind", [TemplateRole, CustomRole]),
+  // Accept either single (legacy) or array of 1-3
+  role: RoleEntry.optional(),
+  roles: z.array(RoleEntry).min(1).max(3).optional(),
 });
 
 export async function POST(req: NextRequest) {
-  const json = await req.json();
+  const json = await req.json().catch(() => null);
   const parsed = CreateRoomBody.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json(
@@ -36,25 +40,43 @@ export async function POST(req: NextRequest) {
     );
   }
   const body = parsed.data;
+  if (!body.role && !body.roles) {
+    return NextResponse.json({ error: "missing_role_or_roles" }, { status: 400 });
+  }
   const user = await ensureUser({
     browserToken: body.browserToken,
     nickname: body.nickname,
   });
-  const role =
-    body.role.kind === "custom"
+
+  const incoming = body.roles ?? (body.role ? [body.role] : []);
+  const roleConfigs = incoming.map((r) =>
+    r.kind === "custom"
       ? {
           kind: "custom" as const,
-          name: body.role.name,
-          initials: body.role.initials || body.role.name.slice(0, 1),
-          color: body.role.color || "#6366f1",
-          dimensions: body.role.dimensions,
+          name: r.name,
+          initials: r.initials || r.name.slice(0, 1),
+          color: r.color || "#6366f1",
+          dimensions: r.dimensions,
         }
-      : body.role;
+      : r,
+  );
+  try {
+    resolveRoles(roleConfigs);
+  } catch (err) {
+    return NextResponse.json(
+      {
+        error: "invalid_role",
+        message: err instanceof Error ? err.message : String(err),
+      },
+      { status: 400 },
+    );
+  }
+
   const session = createSession({
     userId: user.id,
     mode: body.mode,
-    roleConfig: role,
-    topic: body.topic ?? null,
+    roleConfigs,
+    topic: body.topic?.trim() || null,
   });
   return NextResponse.json({ id: session.id });
 }

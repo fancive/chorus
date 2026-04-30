@@ -1,10 +1,12 @@
 "use client";
 
 import { create } from "zustand";
+import type { Mode } from "@/lib/scheduler/modes";
 
 export interface RoomMessage {
   id: string;
   actor: "user" | "host" | "role";
+  actorRoleIndex: number | null;
   content: string;
   status: "streaming" | "completed" | "interrupted";
   revision: number;
@@ -12,9 +14,9 @@ export interface RoomMessage {
 
 export interface RoomMeta {
   id: string;
-  mode: "interview" | "dialogue" | "coach";
+  mode: Mode;
   topic: string | null;
-  role: { name: string; initials: string; color: string };
+  roles: { name: string; initials: string; color: string }[];
   status: string;
 }
 
@@ -22,20 +24,25 @@ interface RoomState {
   meta: RoomMeta | null;
   messages: RoomMessage[];
   statusBarHint: string;
-  inputLocked: boolean;
   awaiting: "user" | "ai" | "ended";
   ended: boolean;
 
   init: (meta: RoomMeta, messages: RoomMessage[]) => void;
   applyEvent: (event: SseEvent) => void;
   appendUserMessage: (id: string, content: string) => void;
+  removeMessage: (id: string) => void;
+  markStreamingInterrupted: () => void;
   setEnded: () => void;
-  setInputLocked: (v: boolean) => void;
 }
 
 type SseEvent =
-  | { type: "schedule"; nextSpeaker: "host" | "role" | "await_user"; statusBarHint: string }
-  | { type: "message_start"; messageId: string; actor: "host" | "role" }
+  | { type: "schedule"; nextSpeaker: string; statusBarHint: string }
+  | {
+      type: "message_start";
+      messageId: string;
+      actor: "host" | "role";
+      actorRoleIndex: number | null;
+    }
   | { type: "delta"; messageId: string; revision: number; text: string }
   | { type: "message_end"; messageId: string; status: "completed" | "interrupted" }
   | { type: "await_user" }
@@ -45,26 +52,49 @@ export const useRoomStore = create<RoomState>((set) => ({
   meta: null,
   messages: [],
   statusBarHint: "",
-  inputLocked: false,
   awaiting: "user",
   ended: false,
 
-  init: (meta, messages) => set({ meta, messages, awaiting: "user" }),
+  init: (meta, messages) => {
+    const ended = meta.status === "ended";
+    set({
+      meta,
+      messages,
+      statusBarHint: "",
+      awaiting: ended ? "ended" : "user",
+      ended,
+    });
+  },
   appendUserMessage: (id, content) =>
     set((s) => ({
       messages: [
         ...s.messages,
-        { id, actor: "user", content, status: "completed", revision: 1 },
+        {
+          id,
+          actor: "user",
+          actorRoleIndex: null,
+          content,
+          status: "completed",
+          revision: 1,
+        },
       ],
       awaiting: "ai",
     })),
-  setInputLocked: (v) => set({ inputLocked: v }),
+  removeMessage: (id) =>
+    set((s) => ({ messages: s.messages.filter((m) => m.id !== id) })),
+  markStreamingInterrupted: () =>
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.status === "streaming" ? { ...m, status: "interrupted" as const } : m,
+      ),
+      awaiting: "ai",
+    })),
   setEnded: () => set({ ended: true, awaiting: "ended" }),
   applyEvent: (event) =>
     set((s) => {
       switch (event.type) {
         case "schedule":
-          return { statusBarHint: event.statusBarHint };
+          return { statusBarHint: event.statusBarHint, awaiting: "ai" };
         case "message_start": {
           if (s.messages.some((m) => m.id === event.messageId)) return s;
           return {
@@ -73,6 +103,7 @@ export const useRoomStore = create<RoomState>((set) => ({
               {
                 id: event.messageId,
                 actor: event.actor,
+                actorRoleIndex: event.actorRoleIndex,
                 content: "",
                 status: "streaming",
                 revision: 0,

@@ -11,6 +11,22 @@ interface ActiveGeneration {
 }
 
 const active = new Map<string, ActiveGeneration>();
+const turnLocks = new Map<string, string>();
+
+export function tryAcquireTurnLock(sessionId: string, token: string): boolean {
+  if (turnLocks.has(sessionId)) return false;
+  turnLocks.set(sessionId, token);
+  return true;
+}
+
+/** Forcibly hand the lock to a new owner (used when a user message preempts an active turn). */
+export function stealTurnLock(sessionId: string, token: string) {
+  turnLocks.set(sessionId, token);
+}
+
+export function releaseTurnLock(sessionId: string, token: string) {
+  if (turnLocks.get(sessionId) === token) turnLocks.delete(sessionId);
+}
 
 export function registerGeneration(sessionId: string, generation: Omit<ActiveGeneration, "startedAt">) {
   active.set(sessionId, { ...generation, startedAt: Date.now() });

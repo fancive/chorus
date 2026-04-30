@@ -6,18 +6,13 @@ import { getOrCreateBrowserToken, getNickname } from "@/lib/client/identity";
 
 interface SessionEntry {
   id: string;
-  mode: "interview" | "dialogue" | "coach";
+  topic: string | null;
+  roleNames: string[];
   status: string;
   createdAt: string;
   endedAt: string | null;
   summary: { recap: string } | null;
 }
-
-const MODE_LABEL: Record<SessionEntry["mode"], string> = {
-  interview: "访谈",
-  dialogue: "对谈",
-  coach: "教练",
-};
 
 export default function HomePage() {
   const [sessions, setSessions] = useState<SessionEntry[] | null>(null);
@@ -32,7 +27,8 @@ export default function HomePage() {
       body: JSON.stringify({ browserToken, nickname: getNickname() || undefined }),
     })
       .then((r) => r.json())
-      .then((d) => setSessions(d.sessions));
+      .then((d) => setSessions(d.sessions))
+      .catch(() => setSessions([]));
   }, []);
 
   return (
@@ -65,7 +61,12 @@ export default function HomePage() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="text-sm font-medium text-slate-900">
-                        {MODE_LABEL[s.mode]}
+                        {s.roleNames.length ? s.roleNames.join(" / ") : "对话"}
+                        {s.topic && (
+                          <span className="ml-2 text-xs font-normal text-slate-500">
+                            · {s.topic}
+                          </span>
+                        )}
                         <span className="ml-2 text-xs font-normal text-slate-400">
                           {new Date(s.createdAt).toLocaleString("zh-CN")}
                         </span>

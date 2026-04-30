@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { getOrCreateBrowserToken } from "@/lib/client/identity";
 
 interface SummaryPayload {
   recap: string;
@@ -13,23 +14,38 @@ interface SummaryPayload {
 }
 
 interface RoomData {
-  session: { id: string; mode: string; topic: string | null; role: { name: string; initials: string; color: string } };
+  session: {
+    id: string;
+    mode: string;
+    topic: string | null;
+    roles: { name: string; initials: string; color: string }[];
+  };
   summary: SummaryPayload | null;
 }
 
 export default function SummaryPage() {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<RoomData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void fetch(`/api/room/${id}`)
-      .then((r) => r.json())
-      .then((d) => setData(d));
+    void fetch(`/api/room/${id}`, {
+      headers: { "x-chorus-token": getOrCreateBrowserToken() },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error("房间不存在或已不可访问");
+        return r.json();
+      })
+      .then((d) => setData(d))
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, [id]);
 
+  if (error) return <main className="p-8 text-red-700">{error}</main>;
   if (!data) return <main className="p-8 text-slate-400">加载中...</main>;
   const summary = data.summary;
-  const roleName = data.session.role.name;
+  const roles = data.session.roles;
+  const isDebate = roles.length > 1;
+  const roleName = roles[0]?.name ?? "参会人";
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-10">
@@ -46,7 +62,7 @@ export default function SummaryPage() {
             <p className="leading-7 text-slate-800">{summary.recap}</p>
           </Section>
           {summary.role_observations.length > 0 && (
-            <Section title={`${roleName}的关键观点`}>
+            <Section title={isDebate ? "参会人的关键观点" : `${roleName}的关键观点`}>
               <ul className="list-disc space-y-1 pl-5 text-slate-800">
                 {summary.role_observations.map((s, i) => (
                   <li key={i}>{s}</li>
@@ -67,9 +83,7 @@ export default function SummaryPage() {
             <Section title="金句 / Take-away">
               <div className="space-y-2">
                 {summary.quotes.map((q, i) => (
-                  <QuoteCard key={i} text={q.text} speaker={
-                    q.speaker === "role" ? roleName : q.speaker === "host" ? "主持人" : "你"
-                  } />
+                  <QuoteCard key={i} text={q.text} speaker={q.speaker} />
                 ))}
               </div>
             </Section>
@@ -91,22 +105,38 @@ export default function SummaryPage() {
               </ul>
             </Section>
           )}
-          <div className="flex gap-3 border-t border-slate-200 pt-6">
-            <a
-              href={`/api/room/${id}/export`}
-              className="rounded-md bg-slate-100 px-4 py-2 text-sm text-slate-700 hover:bg-slate-200"
-            >
-              导出 Markdown
-            </a>
-            <Link
-              href="/new"
-              className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
-            >
-              再来一场
-            </Link>
-          </div>
         </div>
       )}
+      <div className="mt-8 flex gap-3 border-t border-slate-200 pt-6">
+        <button
+          type="button"
+          onClick={async () => {
+            const r = await fetch(`/api/room/${id}/export`, {
+              headers: { "x-chorus-token": getOrCreateBrowserToken() },
+            });
+            if (!r.ok) {
+              setError("导出失败");
+              return;
+            }
+            const blob = await r.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `chorus-${id}.md`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          }}
+          className="rounded-md bg-slate-100 px-4 py-2 text-sm text-slate-700 hover:bg-slate-200"
+        >
+          导出 Markdown
+        </button>
+        <Link
+          href="/new"
+          className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+        >
+          再来一场
+        </Link>
+      </div>
     </main>
   );
 }
@@ -121,7 +151,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function QuoteCard({ text, speaker }: { text: string; speaker: string }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   return (
     <div className="rounded-md border border-slate-200 bg-white px-4 py-3">
       <p className="leading-6 text-slate-900">"{text}"</p>
@@ -129,13 +159,21 @@ function QuoteCard({ text, speaker }: { text: string; speaker: string }) {
         <span className="text-xs text-slate-500">— {speaker}</span>
         <button
           onClick={async () => {
-            await navigator.clipboard.writeText(text);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
+            try {
+              await navigator.clipboard.writeText(text);
+              setState("copied");
+            } catch {
+              setState("failed");
+            }
+            setTimeout(() => setState("idle"), 2000);
           }}
           className="text-xs text-slate-400 hover:text-slate-900"
         >
-          {copied ? "已复制" : "复制"}
+          {state === "copied"
+            ? "已复制"
+            : state === "failed"
+              ? "复制失败，请手动选中"
+              : "复制"}
         </button>
       </div>
     </div>

@@ -11,3 +11,6 @@ next-env.d.ts
 chorus.db
 chorus.db-*
 drizzle/migrations/*.snapshot.json
+
+# improvement-orchestrator state
+.agent/
