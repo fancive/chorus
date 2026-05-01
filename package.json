@@ -13,6 +13,7 @@
     "prepare": "husky",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
+    "replay": "tsx scripts/replay-scheduler.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
