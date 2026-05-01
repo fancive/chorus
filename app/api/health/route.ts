@@ -8,18 +8,19 @@ export const dynamic = "force-dynamic";
 
 interface HealthReport {
   ok: boolean;
-  db: { ok: boolean; error?: string };
-  provider: { ok: boolean; issues: string[] };
+  db: "ok" | "env_missing" | "unreachable";
+  provider: "ok" | "env_missing";
 }
 
 async function pingDb(): Promise<HealthReport["db"]> {
   try {
     const db = getDb();
     const row = await db.get<{ ok: number }>(sql`SELECT 1 AS ok`);
-    if (row?.ok !== 1) return { ok: false, error: "unexpected_select_result" };
-    return { ok: true };
+    return row?.ok === 1 ? "ok" : "unreachable";
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    // Log details server-side; don't echo internal error text to the world.
+    console.error("[health] db ping failed:", err);
+    return "unreachable";
   }
 }
 
@@ -28,21 +29,19 @@ export async function GET() {
   const providerIssues = validateProviderEnv();
 
   if (dbEnvIssues.length || providerIssues.length) {
-    return NextResponse.json(
-      {
-        ok: false,
-        db: { ok: false, error: dbEnvIssues.join("; ") || undefined },
-        provider: { ok: providerIssues.length === 0, issues: providerIssues },
-      } satisfies HealthReport,
-      { status: 503 },
-    );
+    const report: HealthReport = {
+      ok: false,
+      db: dbEnvIssues.length ? "env_missing" : "ok",
+      provider: providerIssues.length ? "env_missing" : "ok",
+    };
+    return NextResponse.json(report, { status: 503 });
   }
 
-  const dbReport = await pingDb();
+  const db = await pingDb();
   const report: HealthReport = {
-    ok: dbReport.ok,
-    db: dbReport,
-    provider: { ok: true, issues: [] },
+    ok: db === "ok",
+    db,
+    provider: "ok",
   };
   return NextResponse.json(report, { status: report.ok ? 200 : 503 });
 }

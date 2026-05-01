@@ -46,8 +46,8 @@ export default function SummaryPage() {
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, [id]);
 
-  if (error) return <main className="p-8 text-red-700">{error}</main>;
-  if (!data) return <main className="p-8 text-slate-400">加载中...</main>;
+  if (error) return <main className="p-8 text-red-700 dark:text-red-400">{error}</main>;
+  if (!data) return <main className="p-8 text-ink-400">加载中...</main>;
   const summary = data.summary;
   const roles = data.session.roles;
   const isDebate = roles.length > 1;
@@ -55,21 +55,24 @@ export default function SummaryPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-10">
-      <Link href="/" className="text-sm text-slate-500 hover:text-slate-900">
+      <Link
+        href="/"
+        className="text-sm text-ink-500 transition hover:text-ink-900 dark:text-ink-400 dark:hover:text-ink-100"
+      >
         ← 返回首页
       </Link>
       <h1 className="mt-4 text-2xl font-semibold">会后总结</h1>
 
       {!summary ? (
-        <p className="mt-8 text-slate-500">这次会话没有生成总结。</p>
+        <p className="mt-8 text-ink-500 dark:text-ink-400">这次会话没有生成总结。</p>
       ) : (
         <div className="mt-8 space-y-8">
           <Section title="本轮聊了什么">
-            <p className="leading-7 text-slate-800">{summary.recap}</p>
+            <p className="whitespace-pre-wrap leading-7">{summary.recap}</p>
           </Section>
           {summary.role_observations.length > 0 && (
             <Section title={isDebate ? "参会人的关键观点" : `${roleName}的关键观点`}>
-              <ul className="list-disc space-y-1 pl-5 text-slate-800">
+              <ul className="list-disc space-y-1 pl-5">
                 {summary.role_observations.map((s, i) => (
                   <li key={i}>{s}</li>
                 ))}
@@ -78,7 +81,7 @@ export default function SummaryPage() {
           )}
           {summary.user_highlights.length > 0 && (
             <Section title="你的关键表达">
-              <ul className="list-disc space-y-1 pl-5 text-slate-800">
+              <ul className="list-disc space-y-1 pl-5">
                 {summary.user_highlights.map((s, i) => (
                   <li key={i}>{s}</li>
                 ))}
@@ -98,11 +101,14 @@ export default function SummaryPage() {
             <Section title="可以继续聊的话题">
               <ul className="space-y-2">
                 {summary.follow_up_topics.map((s, i) => (
-                  <li key={i} className="flex items-center justify-between rounded-md bg-slate-100 px-3 py-2">
-                    <span className="text-slate-800">{s}</span>
+                  <li
+                    key={i}
+                    className="surface-muted flex items-center justify-between rounded-md px-3 py-2"
+                  >
+                    <span>{s}</span>
                     <Link
                       href={`/new?topic=${encodeURIComponent(s)}`}
-                      className="text-xs text-slate-500 hover:text-slate-900"
+                      className="text-xs text-ink-500 transition hover:text-ink-900 dark:text-ink-400 dark:hover:text-ink-100"
                     >
                       用这个开新房间
                     </Link>
@@ -129,13 +135,13 @@ export default function SummaryPage() {
           </span>
         </div>
       )}
-      <div className="mt-8 flex flex-wrap gap-2 border-t border-slate-200 pt-6">
+      <div className="mt-8 flex flex-wrap gap-2 border-t border-ink-200 pt-6 dark:border-ink-700">
         <ExportButton id={id} format="md" label="Markdown" onError={setError} />
         <ExportButton id={id} format="json" label="JSON" onError={setError} />
         <ExportButton id={id} format="html" label="HTML" onError={setError} />
         <Link
           href="/new"
-          className="ml-auto rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+          className="ml-auto rounded-full bg-ink-900 px-5 py-2 text-sm font-medium text-white shadow-card transition hover:-translate-y-0.5 hover:shadow-card-md dark:bg-accent-600 dark:hover:bg-accent-500"
         >
           再来一场
         </Link>
@@ -147,7 +153,9 @@ export default function SummaryPage() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="text-sm font-semibold text-slate-500">{title}</h2>
+      <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-500 dark:text-ink-400">
+        {title}
+      </h2>
       <div className="mt-2">{children}</div>
     </section>
   );
@@ -191,7 +199,7 @@ function ExportButton({
           setBusy(false);
         }
       }}
-      className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
+      className="surface-muted rounded-md px-3 py-2 text-sm transition hover:bg-ink-200 disabled:opacity-50 dark:hover:bg-ink-700"
     >
       {busy ? "导出中..." : label}
     </button>
@@ -201,10 +209,10 @@ function ExportButton({
 function QuoteCard({ text, speaker }: { text: string; speaker: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   return (
-    <div className="rounded-md border border-slate-200 bg-white px-4 py-3">
-      <p className="leading-6 text-slate-900">"{text}"</p>
+    <div className="surface rounded-xl border px-4 py-3">
+      <p className="whitespace-pre-wrap leading-6">&ldquo;{text}&rdquo;</p>
       <div className="mt-1 flex items-center justify-between">
-        <span className="text-xs text-slate-500">— {speaker}</span>
+        <span className="text-xs text-ink-500 dark:text-ink-400">— {speaker}</span>
         <button
           onClick={async () => {
             try {
@@ -215,7 +223,7 @@ function QuoteCard({ text, speaker }: { text: string; speaker: string }) {
             }
             setTimeout(() => setState("idle"), 2000);
           }}
-          className="text-xs text-slate-400 hover:text-slate-900"
+          className="text-xs text-ink-400 transition hover:text-ink-900 dark:hover:text-ink-100"
         >
           {state === "copied"
             ? "已复制"

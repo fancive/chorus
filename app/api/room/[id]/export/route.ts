@@ -206,8 +206,9 @@ function htmlResponse(ctx: ExportContext): Response {
     .meta { color: #64748b; font-size: .85rem; }
     section { margin: 1.5rem 0; }
     h2 { font-size: 1rem; letter-spacing: .15em; text-transform: uppercase; color: #64748b; margin: 0 0 .5rem; }
+    section p, blockquote { white-space: pre-wrap; }
     blockquote { margin: .5rem 0; padding: .75rem 1rem; border-left: 3px solid #3b82f6; background: rgba(59,130,246,.08); border-radius: .25rem; }
-    blockquote footer { display: block; margin-top: .25rem; font-size: .85rem; color: #64748b; }
+    blockquote footer { display: block; margin-top: .25rem; font-size: .85rem; color: #64748b; white-space: normal; }
     .msg { margin: 1rem 0; }
     .speaker { font-size: .75rem; text-transform: uppercase; letter-spacing: .1em; color: #94a3b8; margin-bottom: .25rem; }
     .bubble { padding: .75rem 1rem; border-radius: 1rem; background: #fff; border: 1px solid #e2e8f0; white-space: pre-wrap; }

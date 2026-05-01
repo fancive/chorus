@@ -65,9 +65,22 @@ export class OpenAIProvider implements ChorusProvider {
       return { parsed, usage };
     };
 
+    let accPrompt = 0;
+    let accCompletion = 0;
+    const recordUsage = (u?: TokenUsage) => {
+      if (u?.promptTokens) accPrompt += u.promptTokens;
+      if (u?.completionTokens) accCompletion += u.completionTokens;
+    };
+
     try {
       const first = await attempt(null);
-      if (first.parsed) return { data: first.parsed, usage: first.usage };
+      recordUsage(first.usage);
+      if (first.parsed) {
+        return {
+          data: first.parsed,
+          usage: { promptTokens: accPrompt, completionTokens: accCompletion },
+        };
+      }
     } catch (err) {
       if (args.abortSignal?.aborted) throw err;
       // fall through to one retry with stricter instruction
@@ -75,10 +88,14 @@ export class OpenAIProvider implements ChorusProvider {
     const retry = await attempt(
       `严格按照名为 ${args.schemaName} 的 JSON Schema 输出，仅输出合法 JSON 对象，不要任何解释。`,
     );
+    recordUsage(retry.usage);
     if (!retry.parsed) {
       throw new Error(`OpenAI returned no parsed payload for ${args.schemaName}`);
     }
-    return { data: retry.parsed, usage: retry.usage };
+    return {
+      data: retry.parsed,
+      usage: { promptTokens: accPrompt, completionTokens: accCompletion },
+    };
   }
 
   async *streamText(args: StreamTextArgs): AsyncIterable<TokenDelta> {
