@@ -78,6 +78,7 @@ export default function NewRoomPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   // role id ('preset:<id>' for templates, 'custom' for custom) → 0-100
   const [talkativeness, setTalkativeness] = useState<Record<string, number>>({});
+  const [debateFlavor, setDebateFlavor] = useState<"natural" | "strict" | "freefire">("natural");
 
   useEffect(() => {
     setNick(getNickname());
@@ -165,6 +166,7 @@ export default function NewRoomPage() {
         mode,
         topic: topic.trim() || undefined,
         roles,
+        debateFlavor: roles.length > 1 ? debateFlavor : undefined,
       }),
     });
     if (r.ok) {
@@ -290,6 +292,37 @@ export default function NewRoomPage() {
             </button>
           )}
         </div>
+
+        {/* Debate flavor (only when 2+ selected) */}
+        {totalSelected > 1 && (
+          <div className="mt-3">
+            <div className="text-xs font-medium text-slate-700">辩论节奏</div>
+            <div className="mt-1 grid grid-cols-3 gap-2">
+              {(
+                [
+                  { id: "natural", label: "自然", desc: "默认；主持人按需调度" },
+                  { id: "strict", label: "严格轮次", desc: "参会人轮流发言" },
+                  { id: "freefire", label: "自由开火", desc: "主持人少出场，更激烈" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setDebateFlavor(opt.id)}
+                  aria-pressed={debateFlavor === opt.id}
+                  className={`rounded-md border px-2 py-2 text-left transition ${
+                    debateFlavor === opt.id
+                      ? "border-slate-900 bg-white shadow-sm"
+                      : "border-slate-200 bg-white hover:border-slate-400"
+                  }`}
+                >
+                  <div className="text-xs font-medium text-slate-900">{opt.label}</div>
+                  <div className="mt-0.5 text-[10px] leading-4 text-slate-500">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Talkativeness sliders (only when 2+ selected, otherwise it doesn't matter) */}
         {totalSelected > 1 && (

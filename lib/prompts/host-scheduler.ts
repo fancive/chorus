@@ -35,6 +35,8 @@ export type SchedulerOutput<T extends string> = {
   status_bar_hint: string;
 };
 
+export type DebateFlavor = "natural" | "strict" | "freefire";
+
 export interface SchedulerContext {
   mode: Mode;
   roles: { name: string; talkativeness?: number }[];
@@ -46,6 +48,7 @@ export interface SchedulerContext {
   lastRoleIndex: number | null;
   /** If the last host utterance addressed a participant by name, the index of that participant. */
   addressedRoleIndex: number | null;
+  debateFlavor?: DebateFlavor;
 }
 
 export function buildSchedulerTask(ctx: SchedulerContext): string {
@@ -109,6 +112,12 @@ export function buildSchedulerTask(ctx: SchedulerContext): string {
     "- 不要连续两轮都是 host",
     hasTalkativeness
       ? "- 在不违反上面的硬规则前提下，活跃度高的参会人应当被更频繁选中（活跃度 80+ 偏好抢答；活跃度 20- 倾向被点名才出现）"
+      : "",
+    isDebate && ctx.debateFlavor === "strict"
+      ? "- 严格轮次模式：参会人之间必须严格交替（A → B → A → B），host 仅在用户介入或卡壳时出场；用户刚发言后挑离上轮最远的那位"
+      : "",
+    isDebate && ctx.debateFlavor === "freefire"
+      ? "- 自由开火模式：host 几乎不出场（除非冷场或用户被冷落），每轮在参会人里挑活跃度最高 / 与上一句对立最强的那位接话"
       : "",
     "",
     "next_speaker 字段只能填以下英文字面量之一：",

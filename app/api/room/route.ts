@@ -31,6 +31,7 @@ const CreateRoomBody = z.object({
   nickname: z.string().optional(),
   mode: z.enum(MODES).default("dialogue"),
   topic: z.string().max(300).optional(),
+  debateFlavor: z.enum(["natural", "strict", "freefire"]).optional(),
   // Accept either single (legacy) or array of 1-3
   role: RoleEntry.optional(),
   roles: z.array(RoleEntry).min(1).max(3).optional(),
@@ -91,6 +92,7 @@ export const POST = withRequestLog("POST /api/room", async (req: NextRequest) =>
     mode: body.mode,
     roleConfigs,
     topic: body.topic?.trim() || null,
+    debateFlavor: body.debateFlavor,
   });
   return NextResponse.json({ id: session.id });
 });

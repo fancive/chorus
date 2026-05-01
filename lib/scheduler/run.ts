@@ -80,7 +80,7 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
     }
 
     const mode = normalizeMode(session.mode);
-    const { roles: roleConfigs, topic } = getSessionRolesAndTopic(session);
+    const { roles: roleConfigs, topic, debateFlavor } = getSessionRolesAndTopic(session);
     const baseRoles = resolveRoles(roleConfigs);
     const rolesWithCtx =
       baseRoles.length > 1
@@ -163,6 +163,7 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
             name: r.name,
             talkativeness: r.talkativeness,
           })),
+          debateFlavor,
           aiStreak: session.aiStreak,
           userJustSpoke,
           isColdStart,

@@ -88,11 +88,14 @@ export async function ensureUser(input: {
   return existing;
 }
 
+export type DebateFlavor = "natural" | "strict" | "freefire";
+
 export interface CreateSessionInput {
   userId: string;
   mode: Mode;
   roleConfigs: RoleConfig[];
   topic?: string | null;
+  debateFlavor?: DebateFlavor;
 }
 
 export async function createSession(input: CreateSessionInput) {
@@ -107,6 +110,7 @@ export async function createSession(input: CreateSessionInput) {
       roleConfigJson: JSON.stringify({
         roles: input.roleConfigs,
         topic: input.topic ?? null,
+        debateFlavor: input.debateFlavor ?? "natural",
       }),
     })
     .run();
@@ -142,18 +146,27 @@ export async function getOwnedSession(sessionId: string, browserToken: string) {
   return session;
 }
 
+const VALID_FLAVORS: DebateFlavor[] = ["natural", "strict", "freefire"];
+
 export function getSessionRolesAndTopic(sessionRow: typeof schema.sessions.$inferSelect): {
   roles: RoleConfig[];
   topic: string | null;
+  debateFlavor: DebateFlavor;
 } {
   try {
     const parsed = JSON.parse(sessionRow.roleConfigJson);
     if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.roles)) {
       throw new Error("invalid role config shape");
     }
+    const rawFlavor = parsed.debateFlavor;
+    const debateFlavor: DebateFlavor =
+      typeof rawFlavor === "string" && VALID_FLAVORS.includes(rawFlavor as DebateFlavor)
+        ? (rawFlavor as DebateFlavor)
+        : "natural";
     return {
       roles: parsed.roles as RoleConfig[],
       topic: typeof parsed.topic === "string" ? parsed.topic : null,
+      debateFlavor,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
