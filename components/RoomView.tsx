@@ -68,8 +68,7 @@ export function RoomView({
   }, [messages]);
 
   async function runTurn(
-    userMessage?: string,
-    optimisticId?: string,
+    opts: { userMessage?: string; optimisticId?: string; regenerate?: boolean } = {},
   ): Promise<{ ok: boolean; preFailed: boolean }> {
     const ctrl = new AbortController();
     abortRef.current?.abort();
@@ -78,7 +77,7 @@ export function RoomView({
     let streamFailed = false;
     await postTurn(
       sessionId,
-      { userMessage },
+      { userMessage: opts.userMessage, regenerate: opts.regenerate },
       {
         onEvent: (e) => applyEvent(e as Parameters<typeof applyEvent>[0]),
         onError: (err, phase) => {
@@ -87,7 +86,7 @@ export function RoomView({
           applyEvent({ type: "error", message });
           if (phase === "pre") {
             preFailed = true;
-            if (optimisticId) removeMessage(optimisticId);
+            if (opts.optimisticId) removeMessage(opts.optimisticId);
           } else {
             streamFailed = true;
           }
@@ -106,7 +105,7 @@ export function RoomView({
     markStreamingInterrupted();
     const tempId = `local_${Date.now()}`;
     appendUserMessage(tempId, text);
-    const result = await runTurn(text, tempId);
+    const result = await runTurn({ userMessage: text, optimisticId: tempId });
     if (result.preFailed) setInput(text);
   }
 
@@ -182,7 +181,7 @@ export function RoomView({
           {messages.length === 0 && (
             <p className="text-center text-sm text-ink-400">主持人即将开场...</p>
           )}
-          {messages.map((m) => {
+          {messages.map((m, mi) => {
             const isUser = m.actor === "user";
             const avatar = isUser
               ? { initials: "你", color: "#0f172a" }
@@ -194,6 +193,9 @@ export function RoomView({
               : m.actor === "host"
                 ? "主持人"
                 : roleLabel(m.actorRoleIndex);
+            const isLast = mi === messages.length - 1;
+            const canRegenerate =
+              !isUser && isLast && m.status !== "streaming" && !ended && awaiting === "user";
             return (
               <div
                 key={m.id}
@@ -229,6 +231,15 @@ export function RoomView({
                     <div className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
                       被你打断了
                     </div>
+                  )}
+                  {canRegenerate && (
+                    <button
+                      type="button"
+                      onClick={() => void runTurn({ regenerate: true })}
+                      className="mt-1 text-[11px] text-ink-400 transition hover:text-ink-700 dark:hover:text-ink-200"
+                    >
+                      ↻ 重新生成
+                    </button>
                   )}
                 </div>
               </div>

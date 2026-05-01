@@ -8,7 +8,13 @@ import {
   tryAcquireTurnLock,
 } from "@/lib/scheduler/runtime";
 import { runTurn, resetAiStreak, type SseEvent } from "@/lib/scheduler/run";
-import { appendUserMessage, finalizeMessage, getOwnedSession } from "@/lib/db/repo";
+import {
+  appendUserMessage,
+  finalizeMessage,
+  findLastAiMessage,
+  getOwnedSession,
+  updateSessionStatus,
+} from "@/lib/db/repo";
 import { sseStream } from "@/lib/sse";
 import { extractBrowserToken } from "@/lib/server/auth";
 import { withRequestLog } from "@/lib/server/logger";
@@ -20,6 +26,7 @@ export const dynamic = "force-dynamic";
 
 const TurnBody = z.object({
   userMessage: z.string().max(4000).optional(),
+  regenerate: z.boolean().optional(),
 });
 
 export const POST = withRequestLog("POST /api/room/[id]/turn", async (
@@ -55,6 +62,7 @@ export const POST = withRequestLog("POST /api/room/[id]/turn", async (
   }
   const body = parsed.data;
   const userText = body.userMessage?.trim();
+  const wantRegenerate = body.regenerate === true && !userText;
   const lockToken = nanoid(8);
 
   // User-message arrival is a barge-in: it always preempts whatever turn is in
@@ -67,6 +75,24 @@ export const POST = withRequestLog("POST /api/room/[id]/turn", async (
     try {
       await appendUserMessage({ sessionId: id, content: userText });
       await resetAiStreak(id);
+    } catch (err) {
+      releaseTurnLock(id, lockToken);
+      throw err;
+    }
+  } else if (wantRegenerate) {
+    // Regeneration: drop the most-recent AI message and rerun the scheduler
+    // from before it. Treats the last AI as if it were interrupted by the
+    // user. If there is no AI tail, fall through to the idle-ping branch.
+    const aborted = abortActiveGeneration(id);
+    if (aborted?.messageId) await finalizeMessage(aborted.messageId, "interrupted");
+    stealTurnLock(id, lockToken);
+    try {
+      const last = await findLastAiMessage(id);
+      if (last) {
+        await finalizeMessage(last.id, "interrupted");
+        const newStreak = Math.max(0, session.aiStreak - 1);
+        await updateSessionStatus(id, { aiStreak: newStreak });
+      }
     } catch (err) {
       releaseTurnLock(id, lockToken);
       throw err;

@@ -184,6 +184,22 @@ export async function listMessages(sessionId: string) {
     .all();
 }
 
+export async function findLastAiMessage(sessionId: string) {
+  const db = getDb();
+  return db
+    .select()
+    .from(schema.messages)
+    .where(
+      and(
+        eq(schema.messages.sessionId, sessionId),
+        sql`${schema.messages.actor} != 'user'`,
+      ),
+    )
+    .orderBy(desc(schema.messages.seq))
+    .limit(1)
+    .get();
+}
+
 export async function appendUserMessage(input: { sessionId: string; content: string }) {
   const db = getDb();
   const id = newId("msg");
