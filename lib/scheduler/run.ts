@@ -159,7 +159,10 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
         role: "user",
         content: buildSchedulerTask({
           mode,
-          roles: baseRoles.map((r) => ({ name: r.name })),
+          roles: baseRoles.map((r) => ({
+            name: r.name,
+            talkativeness: r.talkativeness,
+          })),
           aiStreak: session.aiStreak,
           userJustSpoke,
           isColdStart,

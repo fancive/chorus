@@ -37,7 +37,7 @@ export type SchedulerOutput<T extends string> = {
 
 export interface SchedulerContext {
   mode: Mode;
-  roles: { name: string }[];
+  roles: { name: string; talkativeness?: number }[];
   aiStreak: number;
   userJustSpoke: boolean;
   isColdStart: boolean;
@@ -50,9 +50,14 @@ export interface SchedulerContext {
 
 export function buildSchedulerTask(ctx: SchedulerContext): string {
   const isDebate = ctx.roles.length > 1;
-  const roleListLines = ctx.roles.map(
-    (r, i) => `- role_${i} = ${r.name}`,
+  const hasTalkativeness = ctx.roles.some(
+    (r) => typeof r.talkativeness === "number" && r.talkativeness !== 50,
   );
+  const roleListLines = ctx.roles.map((r, i) => {
+    const t = r.talkativeness;
+    if (typeof t !== "number" || t === 50) return `- role_${i} = ${r.name}`;
+    return `- role_${i} = ${r.name}（活跃度 ${t}/100）`;
+  });
 
   const lines: string[] = [
     "---",
@@ -102,6 +107,9 @@ export function buildSchedulerTask(ctx: SchedulerContext): string {
     !isDebate ? "- 中段优先在 role 和 await_user 之间选，不要让 host 频繁出场" : "",
     !isDebate ? "- 用户刚发言后，绝大多数情况下是 role 接话" : "",
     "- 不要连续两轮都是 host",
+    hasTalkativeness
+      ? "- 在不违反上面的硬规则前提下，活跃度高的参会人应当被更频繁选中（活跃度 80+ 偏好抢答；活跃度 20- 倾向被点名才出现）"
+      : "",
     "",
     "next_speaker 字段只能填以下英文字面量之一：",
     `- "host"（主持人接话）`,

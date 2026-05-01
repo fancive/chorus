@@ -76,6 +76,8 @@ export default function NewRoomPage() {
   const [submitting, setSubmitting] = useState(false);
   const [topicSuggestions, setTopicSuggestions] = useState<string[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // role id ('preset:<id>' for templates, 'custom' for custom) → 0-100
+  const [talkativeness, setTalkativeness] = useState<Record<string, number>>({});
 
   useEffect(() => {
     setNick(getNickname());
@@ -143,6 +145,7 @@ export default function NewRoomPage() {
     const roles: unknown[] = picked.map((id) => ({
       kind: "template" as const,
       templateId: id,
+      talkativeness: talkativeness[`preset:${id}`],
     }));
     if (customAdded) {
       roles.push({
@@ -150,6 +153,7 @@ export default function NewRoomPage() {
         name: custom.name.trim() || "自定义参会人",
         color: custom.color,
         dimensions: { ...custom.dims, freeform: custom.freeform.trim() || undefined },
+        talkativeness: talkativeness["custom"],
       });
     }
     const r = await fetch("/api/room", {
@@ -286,6 +290,45 @@ export default function NewRoomPage() {
             </button>
           )}
         </div>
+
+        {/* Talkativeness sliders (only when 2+ selected, otherwise it doesn't matter) */}
+        {totalSelected > 1 && (
+          <div className="mt-3 space-y-2 rounded-md bg-slate-50 px-3 py-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-700">活跃度（影响主持人调度）</span>
+              <span className="text-[10px] text-slate-400">默认 50</span>
+            </div>
+            {picked.map((id) => {
+              const t = tplById.get(id);
+              if (!t) return null;
+              const key = `preset:${id}`;
+              const value = talkativeness[key] ?? 50;
+              return (
+                <TalkativenessRow
+                  key={key}
+                  initials={t.initials}
+                  color={t.color}
+                  name={t.name}
+                  value={value}
+                  onChange={(v) =>
+                    setTalkativeness((prev) => ({ ...prev, [key]: v }))
+                  }
+                />
+              );
+            })}
+            {customChip && (
+              <TalkativenessRow
+                initials={customChip.initials}
+                color={customChip.color}
+                name={customChip.name}
+                value={talkativeness["custom"] ?? 50}
+                onChange={(v) =>
+                  setTalkativeness((prev) => ({ ...prev, custom: v }))
+                }
+              />
+            )}
+          </div>
+        )}
 
         {/* Tab switcher */}
         <div className="mt-4 flex gap-2">
@@ -504,5 +547,38 @@ function PresetCard({
       </div>
       {selected && <span className="text-xs text-emerald-600">✓</span>}
     </button>
+  );
+}
+
+function TalkativenessRow({
+  initials,
+  color,
+  name,
+  value,
+  onChange,
+}: {
+  initials: string;
+  color: string;
+  name: string;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <label className="flex items-center gap-3">
+      <Avatar initials={initials} color={color} size={20} />
+      <span className="w-16 shrink-0 text-xs text-slate-700">{name}</span>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="flex-1 accent-slate-900"
+      />
+      <span className="w-8 text-right text-[10px] tabular-nums text-slate-500">
+        {value}
+      </span>
+    </label>
   );
 }

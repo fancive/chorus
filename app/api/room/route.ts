@@ -10,9 +10,11 @@ import { withRequestLog } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 
+const Talkativeness = z.number().int().min(0).max(100).optional();
 const TemplateRole = z.object({
   kind: z.literal("template"),
   templateId: z.string(),
+  talkativeness: Talkativeness,
 });
 const CustomRole = z.object({
   kind: z.literal("custom"),
@@ -20,6 +22,7 @@ const CustomRole = z.object({
   initials: z.string().min(1).max(2).optional(),
   color: z.string().optional(),
   dimensions: DimensionSelection,
+  talkativeness: Talkativeness,
 });
 const RoleEntry = z.discriminatedUnion("kind", [TemplateRole, CustomRole]);
 
@@ -67,8 +70,9 @@ export const POST = withRequestLog("POST /api/room", async (req: NextRequest) =>
           initials: r.initials || r.name.slice(0, 1),
           color: r.color || "#6366f1",
           dimensions: r.dimensions,
+          talkativeness: r.talkativeness,
         }
-      : r,
+      : { kind: "template" as const, templateId: r.templateId, talkativeness: r.talkativeness },
   );
   try {
     resolveRoles(roleConfigs);

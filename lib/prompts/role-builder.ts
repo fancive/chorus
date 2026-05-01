@@ -5,21 +5,37 @@ import {
 } from "./dimensions";
 import { ROLE_TEMPLATES, type RoleTemplate, getRoleTemplate } from "./role-templates";
 
+/** 0-100. 50 = neutral, 100 = always wants the floor, 0 = waits to be cued. */
+export type Talkativeness = number;
+
+interface CommonConfig {
+  /** Per-role bias for the scheduler. Default 50. */
+  talkativeness?: Talkativeness;
+}
+
 export type RoleConfig =
-  | { kind: "template"; templateId: string }
-  | {
+  | ({ kind: "template"; templateId: string } & CommonConfig)
+  | ({
       kind: "custom";
       name: string;
       initials: string;
       color: string;
       dimensions: DimensionSelection;
-    };
+    } & CommonConfig);
 
 export interface ResolvedRole {
   name: string;
   initials: string;
   color: string;
   systemPrompt: string;
+  talkativeness: Talkativeness;
+}
+
+export const DEFAULT_TALKATIVENESS: Talkativeness = 50;
+
+function clampTalkativeness(v: Talkativeness | undefined): Talkativeness {
+  if (typeof v !== "number" || Number.isNaN(v)) return DEFAULT_TALKATIVENESS;
+  return Math.max(0, Math.min(100, Math.round(v)));
 }
 
 export function resolveRole(config: RoleConfig): ResolvedRole {
@@ -31,6 +47,7 @@ export function resolveRole(config: RoleConfig): ResolvedRole {
       initials: tpl.initials,
       color: tpl.color,
       systemPrompt: tpl.systemPrompt,
+      talkativeness: clampTalkativeness(config.talkativeness),
     };
   }
 
@@ -59,6 +76,7 @@ export function resolveRole(config: RoleConfig): ResolvedRole {
     initials: config.name.slice(0, 1),
     color: config.color,
     systemPrompt: fragments.join("\n"),
+    talkativeness: clampTalkativeness(config.talkativeness),
   };
 }
 
