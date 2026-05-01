@@ -193,40 +193,64 @@ function ShareButton({
   onError: (msg: string | null) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   return (
-    <button
-      type="button"
-      disabled={busy}
-      onClick={async () => {
-        setBusy(true);
-        onError(null);
-        try {
-          const r = await fetch(`/api/room/${id}/share`, {
-            method: "POST",
-            headers: { "x-chorus-token": getOrCreateBrowserToken() },
-          });
-          if (!r.ok) {
-            onError("生成分享链接失败");
-            return;
-          }
-          const { token } = (await r.json()) as { token: string };
-          const url = `${window.location.origin}/share/${token}`;
+    <>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          onError(null);
           try {
-            await navigator.clipboard.writeText(url);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-          } catch {
-            window.prompt("复制这个链接：", url);
+            const r = await fetch(`/api/room/${id}/share`, {
+              method: "POST",
+              headers: { "x-chorus-token": getOrCreateBrowserToken() },
+            });
+            if (!r.ok) {
+              if (r.status === 409) {
+                onError("对话需要先结束才能生成分享链接");
+              } else {
+                onError("生成分享链接失败");
+              }
+              return;
+            }
+            const { token } = (await r.json()) as { token: string };
+            const url = `${window.location.origin}/share/${token}`;
+            try {
+              await navigator.clipboard.writeText(url);
+              setToast(`已复制：${url}`);
+            } catch {
+              window.prompt("复制这个链接：", url);
+            }
+          } finally {
+            setBusy(false);
           }
-        } finally {
-          setBusy(false);
-        }
-      }}
-      className="surface-muted rounded-md px-3 py-2 text-sm transition hover:bg-ink-200 disabled:opacity-50 dark:hover:bg-ink-700"
+        }}
+        className="surface-muted rounded-md px-3 py-2 text-sm transition hover:bg-ink-200 disabled:opacity-50 dark:hover:bg-ink-700"
+      >
+        {busy ? "..." : "分享"}
+      </button>
+      {toast && (
+        <Toast message={toast} onDone={() => setToast(null)} />
+      )}
+    </>
+  );
+}
+
+function Toast({ message, onDone }: { message: string; onDone: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 2400);
+    return () => clearTimeout(t);
+  }, [onDone]);
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 animate-fade-in rounded-full bg-ink-900 px-4 py-2 text-sm text-white shadow-card-md dark:bg-accent-600"
     >
-      {busy ? "..." : copied ? "已复制链接" : "分享"}
-    </button>
+      {message}
+    </div>
   );
 }
 
