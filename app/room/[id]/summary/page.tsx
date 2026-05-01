@@ -9,6 +9,7 @@ interface SummaryPayload {
   recap: string;
   role_observations: string[];
   user_highlights: string[];
+  stances?: { speaker: string; position: string; keyArgument: string }[];
   quotes: { speaker: string; text: string }[];
   follow_up_topics: string[];
 }
@@ -70,6 +71,28 @@ export default function SummaryPage() {
           <Section title="本轮聊了什么">
             <p className="whitespace-pre-wrap leading-7">{summary.recap}</p>
           </Section>
+          {isDebate && summary.stances && summary.stances.length > 1 && (
+            <Section title="立场对照">
+              <ul className="space-y-3">
+                {summary.stances.map((s, i) => (
+                  <li
+                    key={i}
+                    className="surface rounded-lg border px-4 py-3"
+                  >
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-sm font-medium">{s.speaker}</span>
+                      <span className="text-xs text-ink-500 dark:text-ink-400">
+                        {s.position}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-ink-700 dark:text-ink-200">
+                      {s.keyArgument}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
           {summary.role_observations.length > 0 && (
             <Section title={isDebate ? "参会人的关键观点" : `${roleName}的关键观点`}>
               <ul className="list-disc space-y-1 pl-5">

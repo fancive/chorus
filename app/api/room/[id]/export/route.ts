@@ -117,6 +117,13 @@ function mdResponse(ctx: ExportContext): Response {
       ctx.summary.user_highlights.forEach((s) => lines.push(`- ${s}`));
       lines.push("");
     }
+    if (isDebate && ctx.summary.stances && ctx.summary.stances.length > 1) {
+      lines.push(`## 立场对照`, "");
+      ctx.summary.stances.forEach((s) => {
+        lines.push(`### ${s.speaker} — ${s.position}`);
+        lines.push("", s.keyArgument, "");
+      });
+    }
     if (ctx.summary.quotes.length) {
       lines.push(`## 金句`, "");
       ctx.summary.quotes.forEach((q) => lines.push(`> ${q.text} — ${q.speaker}`));

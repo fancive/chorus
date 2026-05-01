@@ -21,13 +21,29 @@ describe("safeParseSummary", () => {
     ).toBeNull();
   });
 
-  it("parses a valid summary payload", () => {
+  it("parses a valid summary payload (stances defaults to [])", () => {
     const payload = {
       recap: "聊了 X",
       role_observations: ["a"],
       user_highlights: [],
       quotes: [{ speaker: "苏格拉底", text: "你以为你知道" }],
       follow_up_topics: ["下次聊 Y"],
+    };
+    const got = safeParseSummary(JSON.stringify(payload));
+    expect(got).toEqual({ ...payload, stances: [] });
+  });
+
+  it("preserves stances when present", () => {
+    const payload = {
+      recap: "X 与 Y 辩论",
+      role_observations: [],
+      user_highlights: [],
+      stances: [
+        { speaker: "牛顿", position: "决定论", keyArgument: "宇宙是机械" },
+        { speaker: "王阳明", position: "心即理", keyArgument: "心外无物" },
+      ],
+      quotes: [],
+      follow_up_topics: [],
     };
     const got = safeParseSummary(JSON.stringify(payload));
     expect(got).toEqual(payload);
