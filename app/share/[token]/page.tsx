@@ -81,18 +81,35 @@ export default function SharePage() {
           完整对话
         </h2>
         {messages.map((m, i) => {
+          // Host messages are meta-narration, not a peer in the conversation —
+          // mirror RoomView's centered horizontal-rule treatment.
+          if (m.actor === "host") {
+            return (
+              <div key={i} className="my-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1 bg-ink-200 dark:bg-ink-700" />
+                  <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-ink-400">
+                    主持人
+                  </span>
+                  <div className="h-px flex-1 bg-ink-200 dark:bg-ink-700" />
+                </div>
+                <div className="mx-auto mt-2 max-w-xl whitespace-pre-wrap text-center text-[14px] leading-relaxed text-ink-500 dark:text-ink-300">
+                  {m.content}
+                </div>
+                {m.status === "interrupted" && (
+                  <div className="mt-1 text-center text-[11px] text-amber-600 dark:text-amber-400">
+                    被打断
+                  </div>
+                )}
+              </div>
+            );
+          }
+
           const isUser = m.actor === "user";
-          const tag = isUser
-            ? "用户"
-            : m.actor === "host"
-              ? "主持人"
-              : roleLabel(m.actorRoleIndex);
-          const avatar =
-            m.actor === "user"
-              ? { initials: "你", color: "#0f172a" }
-              : m.actor === "host"
-                ? { initials: "主", color: "#64748b" }
-                : roles[m.actorRoleIndex ?? 0] ?? { initials: "?", color: "#94a3b8" };
+          const tag = isUser ? "用户" : roleLabel(m.actorRoleIndex);
+          const avatar = isUser
+            ? { initials: "你", color: "#0f172a" }
+            : roles[m.actorRoleIndex ?? 0] ?? { initials: "?", color: "#94a3b8" };
           return (
             <div
               key={i}
