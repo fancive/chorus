@@ -365,7 +365,16 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
       await updateSessionStatus(sessionId, { aiStreak: newStreak, status: "await_user" });
       completed = true;
     } catch (err) {
-      await flush();
+      // flush() may itself throw (e.g. the originating error was a Turso write
+      // failure that will reproduce). Swallow that inner failure so the rest of
+      // the catch can still finalize the message and clear the speaking_*
+      // session status — otherwise the message row stays in "streaming" and
+      // only gets cleaned up by the next /end call.
+      try {
+        await flush();
+      } catch {
+        /* drop tail; we are already in the failure path */
+      }
       if (isAbortLike(err, abort.signal)) {
         await finalizeMessage(message.id, "interrupted");
         await finalizeGeneration(generationId, "aborted");
