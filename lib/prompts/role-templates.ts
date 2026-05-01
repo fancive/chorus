@@ -7,14 +7,15 @@ export interface RoleTemplate {
   color: string;
 }
 
+// Length/density rules apply to every persona. The "must take a stance / no
+// pure questioning" rule is debate-only and lives in withDebateContext —
+// keeping it out of here lets interrogative personas (Socrates, 王阳明, 牛顿)
+// stay interrogative in 1v1 sessions.
 const COMMON_CONSTRAINTS = `
 长度与密度（硬要求）：
 - 一段话，2-4 句，60-150 字之间
 - 每次发言必须包含：一个具体观点 + 至少一条支撑（论据 / 例子 / 类比 / 反驳）
-- 禁止只反问对方而不表态
 - 禁止只附和或复述对方的话
-- 用"我认为..."、"在我看来..."、"问题是..."这类直接的判断句式起手
-- 比如不要说"你觉得呢？"，要说"我认为 X，因为 Y"
 
 格式约束：
 - 不输出 markdown 标题、列表、代码块

@@ -301,7 +301,7 @@ export default function NewRoomPage() {
               {(
                 [
                   { id: "natural", label: "自然", desc: "默认；主持人按需调度" },
-                  { id: "strict", label: "严格轮次", desc: "参会人轮流发言" },
+                  { id: "strict", label: "严格轮次", desc: "参会人轮流发言；主持人点名时除外" },
                   { id: "freefire", label: "自由开火", desc: "主持人少出场，更激烈" },
                 ] as const
               ).map((opt) => (
