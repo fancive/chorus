@@ -21,16 +21,28 @@ describe("safeParseSummary", () => {
     ).toBeNull();
   });
 
-  it("parses a valid summary payload (stances defaults to [])", () => {
+  it("parses a valid summary payload", () => {
     const payload = {
       recap: "聊了 X",
       role_observations: ["a"],
       user_highlights: [],
+      stances: [],
       quotes: [{ speaker: "苏格拉底", text: "你以为你知道" }],
       follow_up_topics: ["下次聊 Y"],
     };
     const got = safeParseSummary(JSON.stringify(payload));
-    expect(got).toEqual({ ...payload, stances: [] });
+    expect(got).toEqual(payload);
+  });
+
+  it("rejects payload missing stances (model must always emit it)", () => {
+    const payload = {
+      recap: "x",
+      role_observations: [],
+      user_highlights: [],
+      quotes: [],
+      follow_up_topics: [],
+    };
+    expect(safeParseSummary(JSON.stringify(payload))).toBeNull();
   });
 
   it("preserves stances when present", () => {

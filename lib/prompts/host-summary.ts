@@ -29,8 +29,7 @@ export const SummaryOutput = z.object({
       }),
     )
     .max(4)
-    .default([])
-    .describe("辩论场每位参会人的立场对照；单人对话留空数组"),
+    .describe("辩论场每位参会人的立场对照；单人对话必须给空数组 []"),
   quotes: z
     .array(
       z.object({
