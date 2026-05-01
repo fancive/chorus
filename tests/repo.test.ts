@@ -55,6 +55,21 @@ describe("messages seq ordering", () => {
     expect(msgs.map((m) => m.seq)).toEqual([1, 2, 3]);
   });
 
+  it("UNIQUE(session_id, seq) constraint exists in the schema", async () => {
+    // libsql local mode serializes one connection, so a true concurrent race
+    // can't be reproduced here. We assert structurally that the unique index
+    // exists and would catch a race in a multi-writer (Turso remote) deploy.
+    const { createClient } = await import("@libsql/client");
+    const url = `file:${process.env.CHORUS_DB_PATH}`;
+    const client = createClient({ url });
+    const rs = await client.execute(
+      "SELECT name, sql FROM sqlite_master WHERE type='index' AND name='messages_session_seq_idx'",
+    );
+    client.close();
+    expect(rs.rows.length).toBe(1);
+    expect(String(rs.rows[0].sql)).toMatch(/UNIQUE/i);
+  });
+
   it("createStreamingMessage and appendUserMessage interleave by seq", async () => {
     await repo.appendUserMessage({ sessionId, content: "u1" });
     const m = await repo.createStreamingMessage({

@@ -17,6 +17,44 @@ async function nextSeq(tx: DbLike, sessionId: string): Promise<number> {
   return (row?.max ?? 0) + 1;
 }
 
+const SEQ_CONFLICT_RE = /UNIQUE constraint failed: messages\.session_id, messages\.seq/i;
+const SEQ_RETRY_LIMIT = 5;
+
+function isRetryableInsertErr(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (SEQ_CONFLICT_RE.test(err.message)) return true;
+  // libSQL surfaces SQLITE_BUSY when two writers race a transaction on the
+  // same client; retry is the same recovery as a unique-conflict.
+  const code = (err as { code?: unknown }).code;
+  if (code === "SQLITE_BUSY") return true;
+  if (/SQLITE_BUSY|database is locked|cannot commit transaction/i.test(err.message)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Run a transaction body that depends on `nextSeq`. Racing writers can either
+ * hit the unique index (both picked the same MAX(seq)+1) or SQLITE_BUSY (libSQL
+ * single-connection contention). Both recover with a small retry.
+ */
+async function withSeqRetry<T>(body: () => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < SEQ_RETRY_LIMIT; attempt++) {
+    try {
+      return await body();
+    } catch (err) {
+      if (!isRetryableInsertErr(err)) throw err;
+      lastErr = err;
+      const backoffMs = 5 * (attempt + 1);
+      await new Promise((r) => setTimeout(r, backoffMs));
+    }
+  }
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error("nextSeq retries exhausted");
+}
+
 export async function ensureUser(input: {
   browserToken: string;
   nickname?: string;
@@ -149,21 +187,23 @@ export async function listMessages(sessionId: string) {
 export async function appendUserMessage(input: { sessionId: string; content: string }) {
   const db = getDb();
   const id = newId("msg");
-  await db.transaction(async (tx) => {
-    const seq = await nextSeq(tx, input.sessionId);
-    await tx
-      .insert(schema.messages)
-      .values({
-        id,
-        sessionId: input.sessionId,
-        actor: "user",
-        content: input.content,
-        status: "completed",
-        revision: 1,
-        seq,
-      })
-      .run();
-  });
+  await withSeqRetry(() =>
+    db.transaction(async (tx) => {
+      const seq = await nextSeq(tx, input.sessionId);
+      await tx
+        .insert(schema.messages)
+        .values({
+          id,
+          sessionId: input.sessionId,
+          actor: "user",
+          content: input.content,
+          status: "completed",
+          revision: 1,
+          seq,
+        })
+        .run();
+    }),
+  );
   const row = await db.select().from(schema.messages).where(eq(schema.messages.id, id)).get();
   if (!row) throw new Error("user message insert lost");
   return row;
@@ -176,22 +216,24 @@ export async function createStreamingMessage(input: {
 }) {
   const db = getDb();
   const id = newId("msg");
-  await db.transaction(async (tx) => {
-    const seq = await nextSeq(tx, input.sessionId);
-    await tx
-      .insert(schema.messages)
-      .values({
-        id,
-        sessionId: input.sessionId,
-        actor: input.actor,
-        actorRoleIndex: input.actor === "role" ? input.actorRoleIndex ?? 0 : null,
-        content: "",
-        status: "streaming",
-        revision: 0,
-        seq,
-      })
-      .run();
-  });
+  await withSeqRetry(() =>
+    db.transaction(async (tx) => {
+      const seq = await nextSeq(tx, input.sessionId);
+      await tx
+        .insert(schema.messages)
+        .values({
+          id,
+          sessionId: input.sessionId,
+          actor: input.actor,
+          actorRoleIndex: input.actor === "role" ? input.actorRoleIndex ?? 0 : null,
+          content: "",
+          status: "streaming",
+          revision: 0,
+          seq,
+        })
+        .run();
+    }),
+  );
   const row = await db.select().from(schema.messages).where(eq(schema.messages.id, id)).get();
   if (!row) throw new Error("streaming message insert lost");
   return row;

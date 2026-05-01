@@ -4,6 +4,7 @@ import {
   integer,
   sqliteTable,
   text,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
@@ -74,7 +75,7 @@ export const messages = sqliteTable(
       .default(sql`(unixepoch() * 1000)`),
   },
   (t) => ({
-    sessionSeqIdx: index("messages_session_seq_idx").on(t.sessionId, t.seq),
+    sessionSeqIdx: uniqueIndex("messages_session_seq_idx").on(t.sessionId, t.seq),
   }),
 );
 
