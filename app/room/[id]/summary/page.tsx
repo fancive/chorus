@@ -129,32 +129,13 @@ export default function SummaryPage() {
           </span>
         </div>
       )}
-      <div className="mt-8 flex gap-3 border-t border-slate-200 pt-6">
-        <button
-          type="button"
-          onClick={async () => {
-            const r = await fetch(`/api/room/${id}/export`, {
-              headers: { "x-chorus-token": getOrCreateBrowserToken() },
-            });
-            if (!r.ok) {
-              setError("导出失败");
-              return;
-            }
-            const blob = await r.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `chorus-${id}.md`;
-            a.click();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-          }}
-          className="rounded-md bg-slate-100 px-4 py-2 text-sm text-slate-700 hover:bg-slate-200"
-        >
-          导出 Markdown
-        </button>
+      <div className="mt-8 flex flex-wrap gap-2 border-t border-slate-200 pt-6">
+        <ExportButton id={id} format="md" label="Markdown" onError={setError} />
+        <ExportButton id={id} format="json" label="JSON" onError={setError} />
+        <ExportButton id={id} format="html" label="HTML" onError={setError} />
         <Link
           href="/new"
-          className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+          className="ml-auto rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
         >
           再来一场
         </Link>
@@ -169,6 +150,51 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="text-sm font-semibold text-slate-500">{title}</h2>
       <div className="mt-2">{children}</div>
     </section>
+  );
+}
+
+function ExportButton({
+  id,
+  format,
+  label,
+  onError,
+}: {
+  id: string;
+  format: "md" | "json" | "html";
+  label: string;
+  onError: (msg: string | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        onError(null);
+        try {
+          const r = await fetch(`/api/room/${id}/export?format=${format}`, {
+            headers: { "x-chorus-token": getOrCreateBrowserToken() },
+          });
+          if (!r.ok) {
+            onError("导出失败");
+            return;
+          }
+          const blob = await r.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `chorus-${id}.${format}`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
+    >
+      {busy ? "导出中..." : label}
+    </button>
   );
 }
 
