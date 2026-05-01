@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
       const sum = await getSummary(s.id);
       return {
         id: s.id,
+        title: s.title,
         status: s.status,
         createdAt: s.createdAt,
         endedAt: s.endedAt,

@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOwnedSession, getSessionRolesAndTopic, listMessages, getSummary } from "@/lib/db/repo";
+import { z } from "zod";
+import {
+  getOwnedSession,
+  getSessionRolesAndTopic,
+  listMessages,
+  getSummary,
+  renameSession,
+  softDeleteSession,
+} from "@/lib/db/repo";
 import { resolveRoles } from "@/lib/prompts/role-builder";
 import { normalizeMode } from "@/lib/scheduler/modes";
 import { extractBrowserToken } from "@/lib/server/auth";
@@ -40,4 +48,43 @@ export async function GET(
     })),
     summary: summary ? safeParseSummary(summary.payloadJson) : null,
   });
+}
+
+const PatchBody = z.object({
+  title: z.string().max(120).optional(),
+});
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const session = await getOwnedSession(id, extractBrowserToken(req));
+  if (!session) {
+    return NextResponse.json({ error: "session_not_found" }, { status: 404 });
+  }
+  const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "invalid_body", issues: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+  if (typeof parsed.data.title === "string") {
+    await renameSession(id, parsed.data.title);
+  }
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const session = await getOwnedSession(id, extractBrowserToken(req));
+  if (!session) {
+    return NextResponse.json({ error: "session_not_found" }, { status: 404 });
+  }
+  await softDeleteSession(id);
+  return NextResponse.json({ ok: true });
 }

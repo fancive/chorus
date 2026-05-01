@@ -42,10 +42,12 @@ export const sessions = sqliteTable(
       .default("await_user"),
     aiStreak: integer("ai_streak").notNull().default(0),
     lastUserAt: integer("last_user_at", { mode: "timestamp_ms" }),
+    title: text("title"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
     endedAt: integer("ended_at", { mode: "timestamp_ms" }),
+    deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
   },
   (t) => ({
     userIdx: index("sessions_user_idx").on(t.userId),

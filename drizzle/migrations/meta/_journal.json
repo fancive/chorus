@@ -15,6 +15,13 @@
       "when": 1777600286387,
       "tag": "0001_seq_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1777600726510,
+      "tag": "0002_session_title_softdelete",
+      "breakpoints": true
     }
   ]
 }

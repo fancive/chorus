@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb, schema } from "./index";
 import type { Mode } from "@/lib/scheduler/modes";
@@ -136,7 +136,7 @@ export async function getUserByBrowserToken(browserToken: string) {
 export async function getOwnedSession(sessionId: string, browserToken: string) {
   if (!browserToken) return null;
   const session = await getSession(sessionId);
-  if (!session) return null;
+  if (!session || session.deletedAt) return null;
   const user = await getUserByBrowserToken(browserToken);
   if (!user || user.id !== session.userId) return null;
   return session;
@@ -351,7 +351,30 @@ export async function listSessionsForUser(userId: string) {
   return db
     .select()
     .from(schema.sessions)
-    .where(eq(schema.sessions.userId, userId))
+    .where(
+      and(
+        eq(schema.sessions.userId, userId),
+        isNull(schema.sessions.deletedAt),
+      ),
+    )
     .orderBy(desc(schema.sessions.createdAt))
     .all();
+}
+
+export async function renameSession(sessionId: string, title: string) {
+  const db = getDb();
+  await db
+    .update(schema.sessions)
+    .set({ title: title.trim() || null })
+    .where(eq(schema.sessions.id, sessionId))
+    .run();
+}
+
+export async function softDeleteSession(sessionId: string) {
+  const db = getDb();
+  await db
+    .update(schema.sessions)
+    .set({ deletedAt: new Date() })
+    .where(eq(schema.sessions.id, sessionId))
+    .run();
 }
