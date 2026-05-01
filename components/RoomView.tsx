@@ -14,8 +14,6 @@ import {
   type PaceSpeed,
 } from "@/lib/client/pace";
 
-const HOST_AVATAR = { initials: "主", color: "#64748b" };
-
 export function RoomView({
   sessionId,
 }: {
@@ -232,20 +230,64 @@ export function RoomView({
             <p className="text-center text-sm text-ink-400">主持人即将开场...</p>
           )}
           {messages.map((m, mi) => {
+            const isLast = mi === messages.length - 1;
+            const canRegenerate =
+              m.actor !== "user" && isLast && m.status !== "streaming" && !ended && awaiting === "user";
+            const visibleText = m.content.slice(0, m.displayedLen);
+            const streamingPlaceholder = (
+              <span className="inline-flex gap-1 text-ink-400">
+                <span className="size-1.5 animate-pulse rounded-full bg-current" />
+                <span
+                  className="size-1.5 animate-pulse rounded-full bg-current"
+                  style={{ animationDelay: "150ms" }}
+                />
+                <span
+                  className="size-1.5 animate-pulse rounded-full bg-current"
+                  style={{ animationDelay: "300ms" }}
+                />
+              </span>
+            );
+
+            // Host messages are meta-narration, not a peer in the conversation:
+            // render as a horizontal-rule + centered light text, no avatar / bubble.
+            if (m.actor === "host") {
+              return (
+                <div key={m.id} className="my-4 animate-fade-in">
+                  <div className="flex items-center gap-3">
+                    <div className="h-px flex-1 bg-ink-200 dark:bg-ink-700" />
+                    <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-ink-400">
+                      主持人
+                    </span>
+                    <div className="h-px flex-1 bg-ink-200 dark:bg-ink-700" />
+                  </div>
+                  <div className="mx-auto mt-2 max-w-xl whitespace-pre-wrap text-center text-[14px] leading-relaxed text-ink-500 dark:text-ink-300">
+                    {visibleText || streamingPlaceholder}
+                  </div>
+                  {m.status === "interrupted" && (
+                    <div className="mt-1 text-center text-[11px] text-amber-600 dark:text-amber-400">
+                      被你打断了
+                    </div>
+                  )}
+                  {canRegenerate && (
+                    <div className="mt-1 text-center">
+                      <button
+                        type="button"
+                        onClick={() => void runTurn({ regenerate: true })}
+                        className="text-[11px] text-ink-400 transition hover:text-ink-700 dark:hover:text-ink-200"
+                      >
+                        ↻ 重新生成
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             const isUser = m.actor === "user";
             const avatar = isUser
               ? { initials: "你", color: "#0f172a" }
-              : m.actor === "host"
-                ? HOST_AVATAR
-                : roleAvatar(m.actorRoleIndex);
-            const tag = isUser
-              ? "你"
-              : m.actor === "host"
-                ? "主持人"
-                : roleLabel(m.actorRoleIndex);
-            const isLast = mi === messages.length - 1;
-            const canRegenerate =
-              !isUser && isLast && m.status !== "streaming" && !ended && awaiting === "user";
+              : roleAvatar(m.actorRoleIndex);
+            const tag = isUser ? "你" : roleLabel(m.actorRoleIndex);
             return (
               <div
                 key={m.id}
@@ -263,19 +305,7 @@ export function RoomView({
                         : "bg-white text-ink-900 dark:bg-ink-900 dark:text-ink-50"
                     }`}
                   >
-                    {m.content.slice(0, m.displayedLen) || (
-                      <span className="inline-flex gap-1 text-ink-400">
-                        <span className="size-1.5 animate-pulse rounded-full bg-current" />
-                        <span
-                          className="size-1.5 animate-pulse rounded-full bg-current"
-                          style={{ animationDelay: "150ms" }}
-                        />
-                        <span
-                          className="size-1.5 animate-pulse rounded-full bg-current"
-                          style={{ animationDelay: "300ms" }}
-                        />
-                      </span>
-                    )}
+                    {visibleText || streamingPlaceholder}
                   </div>
                   {m.status === "interrupted" && (
                     <div className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
