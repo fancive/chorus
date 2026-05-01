@@ -107,9 +107,11 @@ export const useRoomStore = create<RoomState>((set) => ({
   tickPace: (dtMs, charsPerSec) =>
     set((s) => {
       if (!Number.isFinite(charsPerSec)) {
-        // Instant mode: snap any lagging messages.
+        // Instant mode: snap any lagging messages, but still freeze interrupted
+        // ones at whatever was already shown.
         let dirty = false;
         const next = s.messages.map((m) => {
+          if (m.status === "interrupted") return m;
           if (m.displayedLen >= m.content.length) return m;
           dirty = true;
           return { ...m, displayedLen: m.content.length };
@@ -119,6 +121,9 @@ export const useRoomStore = create<RoomState>((set) => ({
       const advance = Math.max(1, Math.round((dtMs * charsPerSec) / 1000));
       let dirty = false;
       const next = s.messages.map((m) => {
+        // Once a message is interrupted, no more dribbling: keep displayedLen
+        // wherever it landed when the user moved on.
+        if (m.status === "interrupted") return m;
         if (m.displayedLen >= m.content.length) return m;
         dirty = true;
         return {
@@ -167,15 +172,12 @@ export const useRoomStore = create<RoomState>((set) => ({
           const idx = s.messages.findIndex((m) => m.id === event.messageId);
           if (idx === -1) return { awaiting: "user" };
           const next = [...s.messages];
-          // On interrupt: snap displayed to whatever we've already shown — no
-          // dribbling out the rest after the user has moved on.
+          // On interrupt: tickPace skips interrupted messages, so displayedLen
+          // is already frozen at whatever was on screen.
           // On completed: leave displayedLen alone; the pacing tick will catch
           // up at the configured speed.
           const m = next[idx];
-          next[idx] =
-            event.status === "interrupted"
-              ? { ...m, status: event.status, displayedLen: Math.min(m.displayedLen, m.content.length) }
-              : { ...m, status: event.status };
+          next[idx] = { ...m, status: event.status };
           return { messages: next, awaiting: "user" };
         }
         case "await_user":

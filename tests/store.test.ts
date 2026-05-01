@@ -101,3 +101,83 @@ describe("room store applyEvent dedup", () => {
     expect(msg?.revision).toBe(5);
   });
 });
+
+describe("room store tickPace × interrupted", () => {
+  beforeEach(() => {
+    reset();
+    useRoomStore.getState().init(META, []);
+  });
+
+  function startStreamingMessage(id: string, text: string) {
+    const s = useRoomStore.getState();
+    s.applyEvent({
+      type: "message_start",
+      messageId: id,
+      actor: "host",
+      actorRoleIndex: null,
+    });
+    s.applyEvent({ type: "delta", messageId: id, revision: 1, text });
+  }
+
+  it("advances displayedLen on each tick while streaming", () => {
+    startStreamingMessage("m1", "abcdefghij"); // 10 chars
+    useRoomStore.getState().tickPace(1000, 5); // 5 chars/sec * 1s = 5
+    const m = useRoomStore.getState().messages.find((x) => x.id === "m1")!;
+    expect(m.displayedLen).toBe(5);
+    expect(m.status).toBe("streaming");
+  });
+
+  it("freezes displayedLen after markStreamingInterrupted (paced mode)", () => {
+    startStreamingMessage("m1", "abcdefghij");
+    useRoomStore.getState().tickPace(1000, 5); // displayedLen → 5
+    useRoomStore.getState().markStreamingInterrupted();
+    const before = useRoomStore.getState().messages.find((x) => x.id === "m1")!;
+    expect(before.status).toBe("interrupted");
+    expect(before.displayedLen).toBe(5);
+
+    // Subsequent ticks must not dribble out the rest.
+    useRoomStore.getState().tickPace(1000, 5);
+    useRoomStore.getState().tickPace(1000, 5);
+    const after = useRoomStore.getState().messages.find((x) => x.id === "m1")!;
+    expect(after.displayedLen).toBe(5);
+  });
+
+  it("freezes displayedLen after markStreamingInterrupted (instant mode)", () => {
+    startStreamingMessage("m1", "abcdefghij");
+    useRoomStore.getState().tickPace(1000, 5); // displayedLen → 5
+    useRoomStore.getState().markStreamingInterrupted();
+
+    // Switching to instant mode after an interrupt must NOT snap to full content.
+    useRoomStore.getState().tickPace(50, Infinity);
+    const m = useRoomStore.getState().messages.find((x) => x.id === "m1")!;
+    expect(m.displayedLen).toBe(5);
+  });
+
+  it("keeps advancing displayedLen after message_end completed", () => {
+    startStreamingMessage("m1", "abcdefghij"); // 10 chars
+    useRoomStore.getState().tickPace(600, 5); // displayedLen → 3
+    useRoomStore.getState().applyEvent({
+      type: "message_end",
+      messageId: "m1",
+      status: "completed",
+    });
+    useRoomStore.getState().tickPace(1000, 5); // should advance toward 10
+    const m = useRoomStore.getState().messages.find((x) => x.id === "m1")!;
+    expect(m.status).toBe("completed");
+    expect(m.displayedLen).toBe(8);
+  });
+
+  it("still advances streaming siblings when one message is interrupted", () => {
+    startStreamingMessage("m1", "abcdefghij");
+    useRoomStore.getState().tickPace(1000, 5); // m1 → 5
+    useRoomStore.getState().markStreamingInterrupted(); // freezes m1
+
+    startStreamingMessage("m2", "xyz123"); // new streaming message
+    useRoomStore.getState().tickPace(1000, 5);
+
+    const m1 = useRoomStore.getState().messages.find((x) => x.id === "m1")!;
+    const m2 = useRoomStore.getState().messages.find((x) => x.id === "m2")!;
+    expect(m1.displayedLen).toBe(5);
+    expect(m2.displayedLen).toBe(5);
+  });
+});
