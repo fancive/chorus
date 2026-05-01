@@ -21,14 +21,15 @@ export function buildHostSpeakerTask(ctx: SpeakerContext): string {
       participantsClause,
       `模式：${MODE_LABEL[ctx.mode]}`,
       ctx.topic ? `话题：${ctx.topic}` : "",
-      "要求：",
+      "硬性要求：",
       isDebate
-        ? "- 2-3 句话，介绍每位参会人（一句一人）和话题，预告这是一场辩论"
-        : "- 1-2 句话，介绍参会人和话题",
-      ctx.mode === "coach" ? "- 点明你会帮用户把问题拆小，不要一上来给结论" : "",
-      ctx.mode === "interview" ? "- 像访谈开场，把第一颗球抛给参会人或用户" : "",
-      "- 让用户感到被欢迎，但不要寒暄太多",
-      "- 最后用一句话引导用户开口或抛给某位参会人",
+        ? "- 总长不超过 80 个汉字，最多 3 句"
+        : "- 总长不超过 60 个汉字，最多 2 句",
+      "- 一句话介绍参会人，一句话引导（合起来就是一段，不要列点）",
+      ctx.mode === "coach" ? "- 一句之内点明会帮用户拆问题，不要给结论" : "",
+      ctx.mode === "interview" ? "- 直接把球抛给用户或参会人，不寒暄" : "",
+      "- 不要复述参会人列表（已经在开头介绍过了）",
+      "- 不要用「欢迎来到」「让我们一起」这种主持人套话",
       "- 不要使用 markdown",
     ]
       .filter(Boolean)
