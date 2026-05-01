@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { getDb, validateDbEnv } from "@/lib/db";
 import { validateProviderEnv } from "@/lib/providers";
+import { withRequestLog } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ async function pingDb(): Promise<HealthReport["db"]> {
   }
 }
 
-export async function GET() {
+export const GET = withRequestLog("GET /api/health", async () => {
   const dbEnvIssues = validateDbEnv();
   const providerIssues = validateProviderEnv();
 
@@ -44,4 +45,4 @@ export async function GET() {
     provider: "ok",
   };
   return NextResponse.json(report, { status: report.ok ? 200 : 503 });
-}
+});

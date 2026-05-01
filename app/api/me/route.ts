@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { ensureUser, listSessionsForUser, getSessionRolesAndTopic, getSummary } from "@/lib/db/repo";
 import { resolveRoles } from "@/lib/prompts/role-builder";
+import { withRequestLog } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 
@@ -10,7 +11,7 @@ const Body = z.object({
   nickname: z.string().optional(),
 });
 
-export async function POST(req: NextRequest) {
+export const POST = withRequestLog("POST /api/me", async (req: NextRequest) => {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
@@ -47,4 +48,4 @@ export async function POST(req: NextRequest) {
     }),
   );
   return NextResponse.json({ user: { id: user.id, nickname: user.nickname }, sessions: enriched });
-}
+});

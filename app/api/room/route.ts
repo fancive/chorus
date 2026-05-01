@@ -6,6 +6,7 @@ import { DimensionSelection } from "@/lib/prompts/dimensions";
 import { resolveRoles } from "@/lib/prompts/role-builder";
 import { validateProviderEnv } from "@/lib/providers";
 import { validateDbEnv } from "@/lib/db";
+import { withRequestLog } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,7 @@ const CreateRoomBody = z.object({
   roles: z.array(RoleEntry).min(1).max(3).optional(),
 });
 
-export async function POST(req: NextRequest) {
+export const POST = withRequestLog("POST /api/room", async (req: NextRequest) => {
   const envIssues = [...validateProviderEnv(), ...validateDbEnv()];
   if (envIssues.length) {
     return NextResponse.json(
@@ -88,4 +89,4 @@ export async function POST(req: NextRequest) {
     topic: body.topic?.trim() || null,
   });
   return NextResponse.json({ id: session.id });
-}
+});

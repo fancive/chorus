@@ -7,6 +7,7 @@ import {
 } from "@/lib/db/repo";
 import { resolveRoles } from "@/lib/prompts/role-builder";
 import { extractBrowserToken } from "@/lib/server/auth";
+import { withRequestLog } from "@/lib/server/logger";
 import { safeParseSummary } from "@/lib/prompts/host-summary";
 import type { SummaryOutput } from "@/lib/prompts/host-summary";
 
@@ -32,10 +33,10 @@ interface ExportContext {
   summary: SummaryOutput | null;
 }
 
-export async function GET(
+export const GET = withRequestLog("GET /api/room/[id]/export", async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
-) {
+) => {
   const { id } = await params;
   const session = await getOwnedSession(id, extractBrowserToken(req));
   if (!session) return new Response("not found", { status: 404 });
@@ -60,7 +61,7 @@ export async function GET(
   if (format === "json") return jsonResponse(ctx);
   if (format === "html") return htmlResponse(ctx);
   return mdResponse(ctx);
-}
+});
 
 function speakerName(ctx: ExportContext, m: MessageRow): string {
   if (m.actor === "user") return "你";

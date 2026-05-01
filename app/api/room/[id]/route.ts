@@ -12,14 +12,15 @@ import {
 import { resolveRoles } from "@/lib/prompts/role-builder";
 import { normalizeMode } from "@/lib/scheduler/modes";
 import { extractBrowserToken } from "@/lib/server/auth";
+import { withRequestLog } from "@/lib/server/logger";
 import { safeParseSummary } from "@/lib/prompts/host-summary";
 
 export const runtime = "nodejs";
 
-export async function GET(
+export const GET = withRequestLog("GET /api/room/[id]", async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
-) {
+) => {
   const { id } = await params;
   const session = await getOwnedSession(id, extractBrowserToken(req));
   if (!session) {
@@ -54,16 +55,16 @@ export async function GET(
     summary: summary ? safeParseSummary(summary.payloadJson) : null,
     usage,
   });
-}
+});
 
 const PatchBody = z.object({
   title: z.string().max(120).optional(),
 });
 
-export async function PATCH(
+export const PATCH = withRequestLog("PATCH /api/room/[id]", async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
-) {
+) => {
   const { id } = await params;
   const session = await getOwnedSession(id, extractBrowserToken(req));
   if (!session) {
@@ -80,12 +81,12 @@ export async function PATCH(
     await renameSession(id, parsed.data.title);
   }
   return NextResponse.json({ ok: true });
-}
+});
 
-export async function DELETE(
+export const DELETE = withRequestLog("DELETE /api/room/[id]", async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
-) {
+) => {
   const { id } = await params;
   const session = await getOwnedSession(id, extractBrowserToken(req));
   if (!session) {
@@ -93,4 +94,4 @@ export async function DELETE(
   }
   await softDeleteSession(id);
   return NextResponse.json({ ok: true });
-}
+});

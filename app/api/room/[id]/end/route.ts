@@ -20,13 +20,14 @@ import { getProvider, validateProviderEnv } from "@/lib/providers";
 import { validateDbEnv } from "@/lib/db";
 import { normalizeMode } from "@/lib/scheduler/modes";
 import { extractBrowserToken } from "@/lib/server/auth";
+import { withRequestLog } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 
-export async function POST(
+export const POST = withRequestLog("POST /api/room/[id]/end", async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
-) {
+) => {
   const envIssues = [...validateProviderEnv(), ...validateDbEnv()];
   if (envIssues.length) {
     return NextResponse.json(
@@ -103,4 +104,4 @@ export async function POST(
       { status: 500 },
     );
   }
-}
+});

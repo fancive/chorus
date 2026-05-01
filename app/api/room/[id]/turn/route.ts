@@ -11,6 +11,7 @@ import { runTurn, resetAiStreak, type SseEvent } from "@/lib/scheduler/run";
 import { appendUserMessage, finalizeMessage, getOwnedSession } from "@/lib/db/repo";
 import { sseStream } from "@/lib/sse";
 import { extractBrowserToken } from "@/lib/server/auth";
+import { withRequestLog } from "@/lib/server/logger";
 import { validateProviderEnv } from "@/lib/providers";
 import { validateDbEnv } from "@/lib/db";
 
@@ -21,10 +22,10 @@ const TurnBody = z.object({
   userMessage: z.string().max(4000).optional(),
 });
 
-export async function POST(
+export const POST = withRequestLog("POST /api/room/[id]/turn", async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
-) {
+) => {
   const envIssues = [...validateProviderEnv(), ...validateDbEnv()];
   if (envIssues.length) {
     return new Response(
@@ -87,4 +88,4 @@ export async function POST(
       releaseTurnLock(id, lockToken);
     }
   });
-}
+});
