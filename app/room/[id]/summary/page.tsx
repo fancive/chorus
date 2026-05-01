@@ -139,6 +139,7 @@ export default function SummaryPage() {
         <ExportButton id={id} format="md" label="Markdown" onError={setError} />
         <ExportButton id={id} format="json" label="JSON" onError={setError} />
         <ExportButton id={id} format="html" label="HTML" onError={setError} />
+        <ShareButton id={id} onError={setError} />
         <Link
           href="/new"
           className="ml-auto rounded-full bg-ink-900 px-5 py-2 text-sm font-medium text-white shadow-card transition hover:-translate-y-0.5 hover:shadow-card-md dark:bg-accent-600 dark:hover:bg-accent-500"
@@ -158,6 +159,51 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       </h2>
       <div className="mt-2">{children}</div>
     </section>
+  );
+}
+
+function ShareButton({
+  id,
+  onError,
+}: {
+  id: string;
+  onError: (msg: string | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        onError(null);
+        try {
+          const r = await fetch(`/api/room/${id}/share`, {
+            method: "POST",
+            headers: { "x-chorus-token": getOrCreateBrowserToken() },
+          });
+          if (!r.ok) {
+            onError("生成分享链接失败");
+            return;
+          }
+          const { token } = (await r.json()) as { token: string };
+          const url = `${window.location.origin}/share/${token}`;
+          try {
+            await navigator.clipboard.writeText(url);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          } catch {
+            window.prompt("复制这个链接：", url);
+          }
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className="surface-muted rounded-md px-3 py-2 text-sm transition hover:bg-ink-200 disabled:opacity-50 dark:hover:bg-ink-700"
+    >
+      {busy ? "..." : copied ? "已复制链接" : "分享"}
+    </button>
   );
 }
 

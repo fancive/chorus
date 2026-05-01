@@ -43,6 +43,7 @@ export const sessions = sqliteTable(
     aiStreak: integer("ai_streak").notNull().default(0),
     lastUserAt: integer("last_user_at", { mode: "timestamp_ms" }),
     title: text("title"),
+    shareToken: text("share_token"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -51,6 +52,7 @@ export const sessions = sqliteTable(
   },
   (t) => ({
     userIdx: index("sessions_user_idx").on(t.userId),
+    shareTokenIdx: uniqueIndex("sessions_share_token_idx").on(t.shareToken),
   }),
 );
 

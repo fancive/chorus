@@ -29,6 +29,13 @@
       "when": 1777612015968,
       "tag": "0003_generation_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1777613359473,
+      "tag": "0004_session_share_token",
+      "breakpoints": true
     }
   ]
 }

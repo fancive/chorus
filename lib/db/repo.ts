@@ -420,3 +420,24 @@ export async function softDeleteSession(sessionId: string) {
     .where(eq(schema.sessions.id, sessionId))
     .run();
 }
+
+export async function setShareToken(sessionId: string, token: string | null) {
+  const db = getDb();
+  await db
+    .update(schema.sessions)
+    .set({ shareToken: token })
+    .where(eq(schema.sessions.id, sessionId))
+    .run();
+}
+
+export async function getSessionByShareToken(token: string) {
+  if (!token) return null;
+  const db = getDb();
+  const session = await db
+    .select()
+    .from(schema.sessions)
+    .where(eq(schema.sessions.shareToken, token))
+    .get();
+  if (!session || session.deletedAt) return null;
+  return session;
+}
