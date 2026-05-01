@@ -6,6 +6,13 @@ import { useRoomStore } from "@/lib/client/store";
 import { Avatar } from "./Avatar";
 import { postTurn } from "@/lib/client/sse";
 import { getOrCreateBrowserToken } from "@/lib/client/identity";
+import {
+  PACE_LABELS,
+  PACE_RATES,
+  getPaceSpeed,
+  setPaceSpeed,
+  type PaceSpeed,
+} from "@/lib/client/pace";
 
 const HOST_AVATAR = { initials: "主", color: "#64748b" };
 
@@ -24,12 +31,29 @@ export function RoomView({
   const removeMessage = useRoomStore((s) => s.removeMessage);
   const markStreamingInterrupted = useRoomStore((s) => s.markStreamingInterrupted);
   const setEnded = useRoomStore((s) => s.setEnded);
+  const tickPace = useRoomStore((s) => s.tickPace);
 
   const [input, setInput] = useState("");
   const [endingSummary, setEndingSummary] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [speed, setSpeedState] = useState<PaceSpeed>("normal");
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Read persisted speed once on mount.
+  useEffect(() => {
+    setSpeedState(getPaceSpeed());
+  }, []);
+
+  // Drive paced rendering: tick every 50ms and let the store advance
+  // each message's `displayedLen` toward `content.length`.
+  useEffect(() => {
+    const interval = 50;
+    const handle = setInterval(() => {
+      tickPace(interval, PACE_RATES[speed]);
+    }, interval);
+    return () => clearInterval(handle);
+  }, [speed, tickPace]);
 
   // Auto-trigger initial turn (cold start) once.
   const coldStartRef = useRef(false);
@@ -176,6 +200,23 @@ export function RoomView({
             </div>
           )}
         </div>
+        <select
+          value={speed}
+          onChange={(e) => {
+            const v = e.target.value as PaceSpeed;
+            setSpeedState(v);
+            setPaceSpeed(v);
+          }}
+          aria-label="发言节奏"
+          title="发言节奏"
+          className="shrink-0 rounded-full border border-ink-200 bg-white px-2.5 py-1 text-xs text-ink-600 transition hover:border-ink-300 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300"
+        >
+          {(Object.keys(PACE_LABELS) as PaceSpeed[]).map((s) => (
+            <option key={s} value={s}>
+              {PACE_LABELS[s]}
+            </option>
+          ))}
+        </select>
         <button
           onClick={handleEnd}
           disabled={ended || endingSummary}
@@ -222,7 +263,7 @@ export function RoomView({
                         : "bg-white text-ink-900 dark:bg-ink-900 dark:text-ink-50"
                     }`}
                   >
-                    {m.content || (
+                    {m.content.slice(0, m.displayedLen) || (
                       <span className="inline-flex gap-1 text-ink-400">
                         <span className="size-1.5 animate-pulse rounded-full bg-current" />
                         <span

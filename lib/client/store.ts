@@ -7,7 +7,10 @@ export interface RoomMessage {
   id: string;
   actor: "user" | "host" | "role";
   actorRoleIndex: number | null;
+  /** Server-truth content (everything received so far). */
   content: string;
+  /** How many chars of `content` we've actually painted to the user. */
+  displayedLen: number;
   status: "streaming" | "completed" | "interrupted";
   revision: number;
 }
@@ -33,6 +36,11 @@ interface RoomState {
   removeMessage: (id: string) => void;
   markStreamingInterrupted: () => void;
   setEnded: () => void;
+  /**
+   * Advance per-message paced rendering by `dt` ms, at `charsPerSec`.
+   * Pass Infinity for "instant".
+   */
+  tickPace: (dtMs: number, charsPerSec: number) => void;
 }
 
 type SseEvent =
@@ -57,9 +65,14 @@ export const useRoomStore = create<RoomState>((set) => ({
 
   init: (meta, messages) => {
     const ended = meta.status === "ended";
+    // Existing messages from the server are already complete; show them in full.
+    const initial = messages.map((m) => ({
+      ...m,
+      displayedLen: m.content.length,
+    }));
     set({
       meta,
-      messages,
+      messages: initial,
       statusBarHint: "",
       awaiting: ended ? "ended" : "user",
       ended,
@@ -74,6 +87,7 @@ export const useRoomStore = create<RoomState>((set) => ({
           actor: "user",
           actorRoleIndex: null,
           content,
+          displayedLen: content.length,
           status: "completed",
           revision: 1,
         },
@@ -90,6 +104,30 @@ export const useRoomStore = create<RoomState>((set) => ({
       awaiting: "ai",
     })),
   setEnded: () => set({ ended: true, awaiting: "ended" }),
+  tickPace: (dtMs, charsPerSec) =>
+    set((s) => {
+      if (!Number.isFinite(charsPerSec)) {
+        // Instant mode: snap any lagging messages.
+        let dirty = false;
+        const next = s.messages.map((m) => {
+          if (m.displayedLen >= m.content.length) return m;
+          dirty = true;
+          return { ...m, displayedLen: m.content.length };
+        });
+        return dirty ? { messages: next } : s;
+      }
+      const advance = Math.max(1, Math.round((dtMs * charsPerSec) / 1000));
+      let dirty = false;
+      const next = s.messages.map((m) => {
+        if (m.displayedLen >= m.content.length) return m;
+        dirty = true;
+        return {
+          ...m,
+          displayedLen: Math.min(m.content.length, m.displayedLen + advance),
+        };
+      });
+      return dirty ? { messages: next } : s;
+    }),
   applyEvent: (event) =>
     set((s) => {
       switch (event.type) {
@@ -105,6 +143,7 @@ export const useRoomStore = create<RoomState>((set) => ({
                 actor: event.actor,
                 actorRoleIndex: event.actorRoleIndex,
                 content: "",
+                displayedLen: 0,
                 status: "streaming",
                 revision: 0,
               },
@@ -128,7 +167,15 @@ export const useRoomStore = create<RoomState>((set) => ({
           const idx = s.messages.findIndex((m) => m.id === event.messageId);
           if (idx === -1) return { awaiting: "user" };
           const next = [...s.messages];
-          next[idx] = { ...next[idx], status: event.status };
+          // On interrupt: snap displayed to whatever we've already shown — no
+          // dribbling out the rest after the user has moved on.
+          // On completed: leave displayedLen alone; the pacing tick will catch
+          // up at the configured speed.
+          const m = next[idx];
+          next[idx] =
+            event.status === "interrupted"
+              ? { ...m, status: event.status, displayedLen: Math.min(m.displayedLen, m.content.length) }
+              : { ...m, status: event.status };
           return { messages: next, awaiting: "user" };
         }
         case "await_user":
