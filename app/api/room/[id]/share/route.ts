@@ -14,6 +14,12 @@ export const POST = withRequestLog(
     if (!session) {
       return NextResponse.json({ error: "session_not_found" }, { status: 404 });
     }
+    if (session.status !== "ended") {
+      return NextResponse.json(
+        { error: "session_not_ended", message: "对话需要先结束才能生成分享链接" },
+        { status: 409 },
+      );
+    }
     const token = session.shareToken ?? nanoid(16);
     if (!session.shareToken) await setShareToken(id, token);
     return NextResponse.json({ token });

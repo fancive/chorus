@@ -20,7 +20,10 @@ export const GET = withRequestLog(
     const { token } = await params;
     const session = await getSessionByShareToken(token);
     if (!session) {
-      return NextResponse.json({ error: "share_not_found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "share_not_found" },
+        { status: 404, headers: { "X-Robots-Tag": "noindex, nofollow" } },
+      );
     }
     const { roles: roleConfigs, topic } = getSessionRolesAndTopic(session);
     const roles = resolveRoles(roleConfigs);
@@ -28,24 +31,27 @@ export const GET = withRequestLog(
       listMessages(session.id),
       getSummary(session.id),
     ]);
-    return NextResponse.json({
-      session: {
-        title: session.title,
-        topic,
-        roles: roles.map((r) => ({ name: r.name, initials: r.initials, color: r.color })),
-        createdAt: session.createdAt,
-        endedAt: session.endedAt,
+    return NextResponse.json(
+      {
+        session: {
+          title: session.title,
+          topic,
+          roles: roles.map((r) => ({ name: r.name, initials: r.initials, color: r.color })),
+          createdAt: session.createdAt,
+          endedAt: session.endedAt,
+        },
+        summary: summary ? safeParseSummary(summary.payloadJson) : null,
+        messages: messages
+          .filter((m) => m.content.trim())
+          .map((m) => ({
+            actor: m.actor,
+            actorRoleIndex: m.actorRoleIndex,
+            content: m.content,
+            status: m.status,
+            seq: m.seq,
+          })),
       },
-      summary: summary ? safeParseSummary(summary.payloadJson) : null,
-      messages: messages
-        .filter((m) => m.content.trim())
-        .map((m) => ({
-          actor: m.actor,
-          actorRoleIndex: m.actorRoleIndex,
-          content: m.content,
-          status: m.status,
-          seq: m.seq,
-        })),
-    });
+      { headers: { "X-Robots-Tag": "noindex, nofollow" } },
+    );
   },
 );

@@ -10,6 +10,7 @@ import {
 import { runTurn, resetAiStreak, type SseEvent } from "@/lib/scheduler/run";
 import {
   appendUserMessage,
+  deleteMessage,
   finalizeMessage,
   findLastAiMessage,
   getOwnedSession,
@@ -80,16 +81,16 @@ export const POST = withRequestLog("POST /api/room/[id]/turn", async (
       throw err;
     }
   } else if (wantRegenerate) {
-    // Regeneration: drop the most-recent AI message and rerun the scheduler
-    // from before it. Treats the last AI as if it were interrupted by the
-    // user. If there is no AI tail, fall through to the idle-ping branch.
+    // Regeneration: drop the most-recent AI message entirely (so the
+    // scheduler doesn't re-read it as history) and rerun the turn from
+    // before it. If the last message is the user's, fall through to idle.
     const aborted = abortActiveGeneration(id);
     if (aborted?.messageId) await finalizeMessage(aborted.messageId, "interrupted");
     stealTurnLock(id, lockToken);
     try {
       const last = await findLastAiMessage(id);
       if (last) {
-        await finalizeMessage(last.id, "interrupted");
+        await deleteMessage(last.id);
         const newStreak = Math.max(0, session.aiStreak - 1);
         await updateSessionStatus(id, { aiStreak: newStreak });
       }

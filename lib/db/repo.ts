@@ -200,6 +200,11 @@ export async function findLastAiMessage(sessionId: string) {
     .get();
 }
 
+export async function deleteMessage(messageId: string) {
+  const db = getDb();
+  await db.delete(schema.messages).where(eq(schema.messages.id, messageId)).run();
+}
+
 export async function appendUserMessage(input: { sessionId: string; content: string }) {
   const db = getDb();
   const id = newId("msg");
