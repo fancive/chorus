@@ -257,27 +257,115 @@ function QuoteCard({ text, speaker }: { text: string; speaker: string }) {
   return (
     <div className="surface rounded-xl border px-4 py-3">
       <p className="whitespace-pre-wrap leading-6">&ldquo;{text}&rdquo;</p>
-      <div className="mt-1 flex items-center justify-between">
+      <div className="mt-1 flex items-center justify-between gap-2">
         <span className="text-xs text-ink-500 dark:text-ink-400">— {speaker}</span>
-        <button
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(text);
-              setState("copied");
-            } catch {
-              setState("failed");
-            }
-            setTimeout(() => setState("idle"), 2000);
-          }}
-          className="text-xs text-ink-400 transition hover:text-ink-900 dark:hover:text-ink-100"
-        >
-          {state === "copied"
-            ? "已复制"
-            : state === "failed"
-              ? "复制失败，请手动选中"
-              : "复制"}
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => downloadQuoteImage(text, speaker)}
+            className="text-xs text-ink-400 transition hover:text-ink-900 dark:hover:text-ink-100"
+          >
+            保存图片
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(text);
+                setState("copied");
+              } catch {
+                setState("failed");
+              }
+              setTimeout(() => setState("idle"), 2000);
+            }}
+            className="text-xs text-ink-400 transition hover:text-ink-900 dark:hover:text-ink-100"
+          >
+            {state === "copied"
+              ? "已复制"
+              : state === "failed"
+                ? "复制失败，请手动选中"
+                : "复制"}
+          </button>
+        </div>
       </div>
     </div>
   );
+}
+
+function downloadQuoteImage(text: string, speaker: string): void {
+  const SIZE = 1080;
+  const canvas = document.createElement("canvas");
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+  const bg = dark ? "#0f172a" : "#f8fafc";
+  const fg = dark ? "#f1f5f9" : "#0f172a";
+  const muted = dark ? "#94a3b8" : "#64748b";
+  const accent = dark ? "#60a5fa" : "#2563eb";
+
+  // Background
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+
+  // Subtle accent bar on the left
+  ctx.fillStyle = accent;
+  ctx.fillRect(96, 96, 6, 240);
+
+  // Quote text
+  ctx.fillStyle = fg;
+  ctx.font = '600 56px ui-sans-serif, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", system-ui';
+  ctx.textBaseline = "top";
+  const lines = wrapText(ctx, `“${text}”`, SIZE - 192);
+  let y = 360;
+  for (const line of lines) {
+    ctx.fillText(line, 144, y);
+    y += 80;
+  }
+
+  // Speaker
+  ctx.fillStyle = muted;
+  ctx.font = '500 32px ui-sans-serif, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", system-ui';
+  ctx.fillText(`— ${speaker}`, 144, y + 32);
+
+  // Footer
+  ctx.fillStyle = muted;
+  ctx.font = '500 24px ui-sans-serif, system-ui';
+  ctx.fillText("Chorus · 对话场", 96, SIZE - 96);
+
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `chorus-quote-${speaker}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+}
+
+/** Greedy word-wrap that handles CJK by falling back to per-character wrap. */
+function wrapText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): string[] {
+  // Split first by whitespace, then wrap each piece per-char if needed.
+  const out: string[] = [];
+  let line = "";
+  for (const ch of text) {
+    const candidate = line + ch;
+    if (ctx.measureText(candidate).width > maxWidth && line.length > 0) {
+      out.push(line);
+      line = ch;
+    } else {
+      line = candidate;
+    }
+    if (ch === "\n") {
+      out.push(line.replace(/\n$/, ""));
+      line = "";
+    }
+  }
+  if (line) out.push(line);
+  return out;
 }
