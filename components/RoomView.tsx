@@ -150,56 +150,85 @@ export function RoomView({
         : "等你说";
 
   return (
-    <div className="flex h-screen flex-col">
-      <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
-        <Link href="/" className="shrink-0 text-sm text-slate-500 hover:text-slate-900">
+    <div className="flex h-screen flex-col bg-ink-50 dark:bg-ink-950">
+      <header className="surface flex items-center gap-3 border-b px-4 py-3 sm:px-6">
+        <Link
+          href="/"
+          className="shrink-0 text-sm text-ink-500 transition hover:text-ink-900 dark:text-ink-400 dark:hover:text-ink-100"
+        >
           ← 返回
         </Link>
-        <div className="min-w-0 flex-1 text-sm text-slate-600">
-          <div className="truncate font-medium text-slate-900">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">
             {meta.roles.map((r) => r.name).join(" / ")}
           </div>
           {meta.topic && (
-            <div className="truncate text-xs text-slate-500">{meta.topic}</div>
+            <div className="truncate text-xs text-ink-500 dark:text-ink-400">
+              {meta.topic}
+            </div>
           )}
         </div>
         <button
           onClick={handleEnd}
           disabled={ended || endingSummary}
-          className="shrink-0 rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-800 disabled:bg-slate-300"
+          className="shrink-0 rounded-full bg-ink-900 px-3 py-1.5 text-xs font-medium text-white shadow-card transition hover:-translate-y-0.5 hover:shadow-card-md disabled:translate-y-0 disabled:bg-ink-300 dark:bg-accent-600 dark:hover:bg-accent-500 dark:disabled:bg-ink-700"
         >
           {endingSummary ? "总结中..." : "结束并总结"}
         </button>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6">
-        <div className="mx-auto max-w-3xl space-y-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-8 sm:px-6">
+        <div className="mx-auto max-w-3xl space-y-5">
           {messages.length === 0 && (
-            <p className="text-sm text-slate-400">主持人即将开场...</p>
+            <p className="text-center text-sm text-ink-400">主持人即将开场...</p>
           )}
           {messages.map((m) => {
-            const avatar =
-              m.actor === "user"
-                ? { initials: "你", color: "#0f172a" }
-                : m.actor === "host"
-                  ? HOST_AVATAR
-                  : roleAvatar(m.actorRoleIndex);
-            const tag =
-              m.actor === "user"
-                ? "你"
-                : m.actor === "host"
-                  ? "主持人"
-                  : roleLabel(m.actorRoleIndex);
+            const isUser = m.actor === "user";
+            const avatar = isUser
+              ? { initials: "你", color: "#0f172a" }
+              : m.actor === "host"
+                ? HOST_AVATAR
+                : roleAvatar(m.actorRoleIndex);
+            const tag = isUser
+              ? "你"
+              : m.actor === "host"
+                ? "主持人"
+                : roleLabel(m.actorRoleIndex);
             return (
-              <div key={m.id} className="flex gap-3">
+              <div
+                key={m.id}
+                className={`flex animate-fade-in gap-3 ${isUser ? "flex-row-reverse" : ""}`}
+              >
                 <Avatar initials={avatar.initials} color={avatar.color} />
-                <div className="flex-1">
-                  <div className="text-xs text-slate-500">{tag}</div>
-                  <div className="mt-1 whitespace-pre-wrap text-slate-900">
-                    {m.content || (m.status === "streaming" ? "..." : "")}
+                <div className={`min-w-0 max-w-[80%] ${isUser ? "items-end text-right" : ""}`}>
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-ink-400">
+                    {tag}
+                  </div>
+                  <div
+                    className={`mt-1 whitespace-pre-wrap rounded-bubble px-4 py-2.5 text-[15px] leading-relaxed shadow-card ${
+                      isUser
+                        ? "bg-ink-900 text-white dark:bg-accent-600"
+                        : "bg-white text-ink-900 dark:bg-ink-900 dark:text-ink-50"
+                    }`}
+                  >
+                    {m.content || (
+                      <span className="inline-flex gap-1 text-ink-400">
+                        <span className="size-1.5 animate-pulse rounded-full bg-current" />
+                        <span
+                          className="size-1.5 animate-pulse rounded-full bg-current"
+                          style={{ animationDelay: "150ms" }}
+                        />
+                        <span
+                          className="size-1.5 animate-pulse rounded-full bg-current"
+                          style={{ animationDelay: "300ms" }}
+                        />
+                      </span>
+                    )}
                   </div>
                   {m.status === "interrupted" && (
-                    <div className="mt-1 text-xs text-amber-600">被你打断了</div>
+                    <div className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                      被你打断了
+                    </div>
                   )}
                 </div>
               </div>
@@ -208,22 +237,22 @@ export function RoomView({
         </div>
       </div>
 
-      <div className="border-t border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-3xl items-center gap-2 px-6 py-2 text-xs text-slate-500">
+      <div className="surface border-t">
+        <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-2 text-xs text-ink-500 sm:px-6">
           <span>{speakerLine}</span>
           {statusBarHint && (
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">
+            <span className="rounded-full bg-ink-100 px-2 py-0.5 text-ink-600 dark:bg-ink-800 dark:text-ink-300">
               {statusBarHint}
             </span>
           )}
           {errorText && (
-            <span className="rounded-full bg-red-50 px-2 py-0.5 text-red-700">
+            <span className="rounded-full bg-red-50 px-2 py-0.5 text-red-700 dark:bg-red-500/15 dark:text-red-400">
               {errorText}
             </span>
           )}
         </div>
         <form
-          className="mx-auto flex max-w-3xl items-end gap-2 px-6 pb-4"
+          className="mx-auto flex max-w-3xl items-end gap-2 px-4 pb-4 sm:px-6"
           onSubmit={(e) => {
             e.preventDefault();
             void handleSend();
@@ -241,11 +270,11 @@ export function RoomView({
               }}
               disabled={ended}
               rows={1}
-              className="block max-h-40 w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm leading-5 focus:outline-none focus:ring-2 focus:ring-slate-400"
+              className="block max-h-40 w-full resize-y rounded-2xl border border-ink-200 bg-white px-4 py-2.5 text-[15px] leading-6 shadow-card placeholder:text-ink-400 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/20 dark:border-ink-700 dark:bg-ink-900"
               placeholder={ended ? "对话已结束" : "随时打断也行（Enter 发送，Shift+Enter 换行）"}
             />
             {input.length > 3500 && (
-              <div className="mt-1 text-right text-xs text-slate-400">
+              <div className="mt-1 text-right text-xs text-ink-400">
                 {input.length} / 4000
               </div>
             )}
@@ -253,7 +282,7 @@ export function RoomView({
           <button
             type="submit"
             disabled={!input.trim() || ended}
-            className="h-10 shrink-0 rounded-md bg-slate-900 px-4 text-sm text-white hover:bg-slate-800 disabled:bg-slate-300"
+            className="h-11 shrink-0 rounded-full bg-ink-900 px-5 text-sm font-medium text-white shadow-card transition hover:-translate-y-0.5 hover:shadow-card-md disabled:translate-y-0 disabled:bg-ink-300 disabled:shadow-none dark:bg-accent-600 dark:hover:bg-accent-500 dark:disabled:bg-ink-700"
           >
             发送
           </button>
