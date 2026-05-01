@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   getOwnedSession,
   getSessionRolesAndTopic,
+  getSessionTokenUsage,
   listMessages,
   getSummary,
   renameSession,
@@ -26,7 +27,11 @@ export async function GET(
   }
   const { roles: roleConfigs, topic } = getSessionRolesAndTopic(session);
   const roles = resolveRoles(roleConfigs);
-  const [messages, summary] = await Promise.all([listMessages(id), getSummary(id)]);
+  const [messages, summary, usage] = await Promise.all([
+    listMessages(id),
+    getSummary(id),
+    getSessionTokenUsage(id),
+  ]);
   return NextResponse.json({
     session: {
       id: session.id,
@@ -47,6 +52,7 @@ export async function GET(
       createdAt: m.createdAt,
     })),
     summary: summary ? safeParseSummary(summary.payloadJson) : null,
+    usage,
   });
 }
 

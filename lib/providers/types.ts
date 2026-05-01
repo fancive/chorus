@@ -28,8 +28,20 @@ export interface StreamTextArgs {
   abortSignal: AbortSignal;
 }
 
+export interface TokenUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+}
+
 export interface TokenDelta {
   text: string;
+  /** Set on the final chunk (when the provider supplies it). */
+  usage?: TokenUsage;
+}
+
+export interface GenerateJsonResult<T> {
+  data: T;
+  usage?: TokenUsage;
 }
 
 export interface ChorusProvider {
@@ -38,7 +50,7 @@ export interface ChorusProvider {
   capabilities(): ProviderCapabilities;
   generateJson<TSchema extends z.ZodTypeAny>(
     args: GenerateJsonArgs<TSchema>,
-  ): Promise<z.infer<TSchema>>;
+  ): Promise<GenerateJsonResult<z.infer<TSchema>>>;
   streamText(args: StreamTextArgs): AsyncIterable<TokenDelta>;
 }
 

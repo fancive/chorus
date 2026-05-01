@@ -21,6 +21,12 @@ interface RoomData {
     roles: { name: string; initials: string; color: string }[];
   };
   summary: SummaryPayload | null;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    generations: number;
+  };
 }
 
 export default function SummaryPage() {
@@ -105,6 +111,22 @@ export default function SummaryPage() {
               </ul>
             </Section>
           )}
+        </div>
+      )}
+      {data.usage && data.usage.totalTokens > 0 && (
+        <div className="mt-8 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-400">
+          <span>
+            {data.usage.generations} 次模型调用
+          </span>
+          <span>
+            prompt {data.usage.promptTokens.toLocaleString()} tok
+          </span>
+          <span>
+            completion {data.usage.completionTokens.toLocaleString()} tok
+          </span>
+          <span className="font-medium text-ink-500">
+            合计 {data.usage.totalTokens.toLocaleString()} tok
+          </span>
         </div>
       )}
       <div className="mt-8 flex gap-3 border-t border-slate-200 pt-6">

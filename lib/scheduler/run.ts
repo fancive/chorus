@@ -171,14 +171,14 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
       });
       try {
         const schema = buildSchedulerOutput(baseRoles.length);
-        const result = await schedulerProvider.generateJson({
+        const { data: result, usage } = await schedulerProvider.generateJson({
           schema,
           schemaName: "scheduler_decision",
           purpose: "scheduler",
           messages,
           abortSignal: schedulerAbort.signal,
         });
-        await finalizeGeneration(schedulerGenerationId, "completed");
+        await finalizeGeneration(schedulerGenerationId, "completed", undefined, usage);
         decision = {
           next: result.next_speaker as NextSpeakerTag,
           reason: result.reason,
@@ -317,6 +317,7 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
     let completed = false;
     let revision = 0;
     let buffer = "";
+    let speakerUsage: { promptTokens?: number; completionTokens?: number } | undefined;
     const FLUSH_CHARS = 128;
     const FLUSH_MS = 200;
     let lastFlushAt = Date.now();
@@ -339,6 +340,7 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
           aborted = true;
           break;
         }
+        if (delta.usage) speakerUsage = delta.usage;
         if (!delta.text) continue;
         buffer += delta.text;
         if (buffer.length >= FLUSH_CHARS || Date.now() - lastFlushAt >= FLUSH_MS) {
@@ -349,7 +351,7 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
       if (aborted || abort.signal.aborted) {
         await flush();
         await finalizeMessage(message.id, "interrupted");
-        await finalizeGeneration(generationId, "aborted");
+        await finalizeGeneration(generationId, "aborted", undefined, speakerUsage);
         emit({ type: "message_end", messageId: message.id, status: "interrupted" });
         // Status was set to speaking_*; restore so the next caller sees a sane state.
         const fresh = await getSession(sessionId);
@@ -359,7 +361,7 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
         return;
       }
       await finalizeMessage(message.id, "completed");
-      await finalizeGeneration(generationId, "completed");
+      await finalizeGeneration(generationId, "completed", undefined, speakerUsage);
       emit({ type: "message_end", messageId: message.id, status: "completed" });
       const newStreak = session.aiStreak + 1;
       await updateSessionStatus(sessionId, { aiStreak: newStreak, status: "await_user" });
@@ -377,7 +379,7 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
       }
       if (isAbortLike(err, abort.signal)) {
         await finalizeMessage(message.id, "interrupted");
-        await finalizeGeneration(generationId, "aborted");
+        await finalizeGeneration(generationId, "aborted", undefined, speakerUsage);
         emit({ type: "message_end", messageId: message.id, status: "interrupted" });
         const fresh = await getSession(sessionId);
         if (fresh && fresh.status !== "ended" && fresh.status !== "summarizing") {

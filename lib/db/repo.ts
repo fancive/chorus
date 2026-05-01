@@ -312,13 +312,39 @@ export async function finalizeGeneration(
   id: string,
   status: "completed" | "aborted" | "failed",
   errorMessage?: string,
+  usage?: { promptTokens?: number; completionTokens?: number },
 ) {
   const db = getDb();
   await db
     .update(schema.generations)
-    .set({ status, endedAt: new Date(), errorMessage: errorMessage ?? null })
+    .set({
+      status,
+      endedAt: new Date(),
+      errorMessage: errorMessage ?? null,
+      promptTokens: usage?.promptTokens ?? null,
+      completionTokens: usage?.completionTokens ?? null,
+    })
     .where(eq(schema.generations.id, id))
     .run();
+}
+
+export async function getSessionTokenUsage(sessionId: string) {
+  const db = getDb();
+  const row = await db
+    .select({
+      prompt: sql<number>`COALESCE(SUM(${schema.generations.promptTokens}), 0)`,
+      completion: sql<number>`COALESCE(SUM(${schema.generations.completionTokens}), 0)`,
+      generations: sql<number>`COUNT(*)`,
+    })
+    .from(schema.generations)
+    .where(eq(schema.generations.sessionId, sessionId))
+    .get();
+  return {
+    promptTokens: Number(row?.prompt ?? 0),
+    completionTokens: Number(row?.completion ?? 0),
+    totalTokens: Number(row?.prompt ?? 0) + Number(row?.completion ?? 0),
+    generations: Number(row?.generations ?? 0),
+  };
 }
 
 export async function saveSummary(sessionId: string, payload: unknown) {

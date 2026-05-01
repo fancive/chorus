@@ -99,6 +99,8 @@ export const generations = sqliteTable("generations", {
     .notNull()
     .default("pending"),
   errorMessage: text("error_message"),
+  promptTokens: integer("prompt_tokens"),
+  completionTokens: integer("completion_tokens"),
   startedAt: integer("started_at", { mode: "timestamp_ms" })
     .notNull()
     .default(sql`(unixepoch() * 1000)`),

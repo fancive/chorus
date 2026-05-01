@@ -75,13 +75,13 @@ export async function POST(
   messages.push({ role: "user", content: SUMMARY_TASK });
 
   try {
-    const result = await provider.generateJson({
+    const { data: result, usage } = await provider.generateJson({
       schema: SummaryOutput,
       schemaName: "session_summary",
       purpose: "summary",
       messages,
     });
-    await finalizeGeneration(generationId, "completed");
+    await finalizeGeneration(generationId, "completed", undefined, usage);
     await saveSummary(id, result);
     await updateSessionStatus(id, { status: "ended", endedAt: new Date() });
     return NextResponse.json({ ok: true, summary: result });
