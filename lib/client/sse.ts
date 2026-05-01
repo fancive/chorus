@@ -11,7 +11,7 @@ export interface SseTurnHandlers {
 
 export async function postTurn(
   sessionId: string,
-  body: { userMessage?: string; regenerate?: boolean },
+  body: { userMessage?: string; regenerate?: boolean; resumeStreak?: boolean },
   handlers: SseTurnHandlers,
   signal: AbortSignal,
 ): Promise<void> {

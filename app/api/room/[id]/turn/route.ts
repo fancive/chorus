@@ -28,6 +28,9 @@ export const dynamic = "force-dynamic";
 const TurnBody = z.object({
   userMessage: z.string().max(4000).optional(),
   regenerate: z.boolean().optional(),
+  // User opted in to "let them keep talking" — bypass the AI-streak cap for
+  // this turn by resetting the streak counter before runTurn runs.
+  resumeStreak: z.boolean().optional(),
 });
 
 export const POST = withRequestLog("POST /api/room/[id]/turn", async (
@@ -64,6 +67,8 @@ export const POST = withRequestLog("POST /api/room/[id]/turn", async (
   const body = parsed.data;
   const userText = body.userMessage?.trim();
   const wantRegenerate = body.regenerate === true && !userText;
+  const wantResumeStreak =
+    body.resumeStreak === true && !userText && !wantRegenerate;
   const lockToken = nanoid(8);
 
   // User-message arrival is a barge-in: it always preempts whatever turn is in
@@ -94,6 +99,21 @@ export const POST = withRequestLog("POST /api/room/[id]/turn", async (
         const newStreak = Math.max(0, session.aiStreak - 1);
         await updateSessionStatus(id, { aiStreak: newStreak });
       }
+    } catch (err) {
+      releaseTurnLock(id, lockToken);
+      throw err;
+    }
+  } else if (wantResumeStreak) {
+    if (!tryAcquireTurnLock(id, lockToken)) {
+      return new Response(
+        JSON.stringify({ error: "turn_in_progress" }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    try {
+      // Reset the streak so runTurn's hard-cap guard doesn't immediately
+      // bounce us back to await_user.
+      await updateSessionStatus(id, { aiStreak: 0 });
     } catch (err) {
       releaseTurnLock(id, lockToken);
       throw err;

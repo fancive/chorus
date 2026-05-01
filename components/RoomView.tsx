@@ -68,7 +68,12 @@ export function RoomView({
   }, [messages]);
 
   async function runTurn(
-    opts: { userMessage?: string; optimisticId?: string; regenerate?: boolean } = {},
+    opts: {
+      userMessage?: string;
+      optimisticId?: string;
+      regenerate?: boolean;
+      resumeStreak?: boolean;
+    } = {},
   ): Promise<{ ok: boolean; preFailed: boolean }> {
     const ctrl = new AbortController();
     abortRef.current?.abort();
@@ -77,7 +82,11 @@ export function RoomView({
     let streamFailed = false;
     await postTurn(
       sessionId,
-      { userMessage: opts.userMessage, regenerate: opts.regenerate },
+      {
+        userMessage: opts.userMessage,
+        regenerate: opts.regenerate,
+        resumeStreak: opts.resumeStreak,
+      },
       {
         onEvent: (e) => applyEvent(e as Parameters<typeof applyEvent>[0]),
         onError: (err, phase) => {
@@ -261,6 +270,18 @@ export function RoomView({
               {errorText}
             </span>
           )}
+          {!ended &&
+            awaiting === "user" &&
+            messages.length > 0 &&
+            messages[messages.length - 1].actor !== "user" && (
+              <button
+                type="button"
+                onClick={() => void runTurn({ resumeStreak: true })}
+                className="ml-auto rounded-full bg-ink-100 px-3 py-1 text-[11px] font-medium text-ink-700 transition hover:bg-ink-200 dark:bg-ink-800 dark:text-ink-200 dark:hover:bg-ink-700"
+              >
+                让他们接着聊
+              </button>
+            )}
         </div>
         <form
           className="mx-auto flex max-w-3xl items-end gap-2 px-4 pb-4 sm:px-6"
