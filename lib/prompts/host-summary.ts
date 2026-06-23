@@ -37,7 +37,7 @@ export const SummaryOutput = z.object({
           .string()
           .max(40)
           .describe(
-            "金句的发言者名字。用户写 \"用户\"，主持人写 \"主持人\"，参会人写他们的真名（如 \"苏格拉底\"、\"牛顿\"），不要用 user/host/role 这种代号",
+            "金句的发言者名字。用户写 \"用户\"，主持人写 \"主持人\"，参会人写他们的真名（如 \"苏格拉底\"、\"Warren Buffett\"），不要用 user/host/role 这种代号",
           ),
         text: z.string().max(140),
       }),
@@ -72,7 +72,7 @@ export const SUMMARY_TASK = `
   "user_highlights": ["用户的关键表达1"],
   "stances": [
     {"speaker": "苏格拉底", "position": "认为...", "keyArgument": "代表性论据..."},
-    {"speaker": "牛顿", "position": "反对认为...", "keyArgument": "代表性论据..."}
+    {"speaker": "Warren Buffett", "position": "反对认为...", "keyArgument": "代表性论据..."}
   ],
   "quotes": [
     {"speaker": "用户", "text": "原文摘录"},
