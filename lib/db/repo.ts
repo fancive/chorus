@@ -1,8 +1,10 @@
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb, schema } from "./index";
-import type { Mode } from "@/lib/scheduler/modes";
+import { DEBATE_FLAVORS, type DebateFlavor, type Mode } from "@/lib/scheduler/modes";
 import type { RoleConfig } from "@/lib/prompts/role-builder";
+
+export type { DebateFlavor };
 
 export const newId = (prefix: string) => `${prefix}_${nanoid(12)}`;
 
@@ -88,8 +90,6 @@ export async function ensureUser(input: {
   return existing;
 }
 
-export type DebateFlavor = "natural" | "strict" | "freefire";
-
 export interface CreateSessionInput {
   userId: string;
   mode: Mode;
@@ -146,8 +146,6 @@ export async function getOwnedSession(sessionId: string, browserToken: string) {
   return session;
 }
 
-const VALID_FLAVORS: DebateFlavor[] = ["natural", "strict", "freefire"];
-
 export function getSessionRolesAndTopic(sessionRow: typeof schema.sessions.$inferSelect): {
   roles: RoleConfig[];
   topic: string | null;
@@ -160,7 +158,7 @@ export function getSessionRolesAndTopic(sessionRow: typeof schema.sessions.$infe
     }
     const rawFlavor = parsed.debateFlavor;
     const debateFlavor: DebateFlavor =
-      typeof rawFlavor === "string" && VALID_FLAVORS.includes(rawFlavor as DebateFlavor)
+      typeof rawFlavor === "string" && DEBATE_FLAVORS.includes(rawFlavor as DebateFlavor)
         ? (rawFlavor as DebateFlavor)
         : "natural";
     return {
@@ -195,6 +193,16 @@ export async function listMessages(sessionId: string) {
     .where(eq(schema.messages.sessionId, sessionId))
     .orderBy(asc(schema.messages.seq))
     .all();
+}
+
+export async function countMessages(sessionId: string): Promise<number> {
+  const db = getDb();
+  const row = await db
+    .select({ n: sql<number>`COUNT(*)` })
+    .from(schema.messages)
+    .where(eq(schema.messages.sessionId, sessionId))
+    .get();
+  return Number(row?.n ?? 0);
 }
 
 export async function findLastAiMessage(sessionId: string) {
@@ -275,19 +283,16 @@ export async function createStreamingMessage(input: {
 
 export async function appendDelta(messageId: string, delta: string) {
   const db = getDb();
-  await db.transaction(async (tx) => {
-    const row = await tx
-      .select({ content: schema.messages.content, revision: schema.messages.revision })
-      .from(schema.messages)
-      .where(eq(schema.messages.id, messageId))
-      .get();
-    if (!row) throw new Error("message not found");
-    await tx
-      .update(schema.messages)
-      .set({ content: row.content + delta, revision: row.revision + 1 })
-      .where(eq(schema.messages.id, messageId))
-      .run();
-  });
+  // Single atomic statement (concat in SQL) instead of a SELECT+UPDATE
+  // transaction — halves DB round-trips per flush and removes the read.
+  await db
+    .update(schema.messages)
+    .set({
+      content: sql`${schema.messages.content} || ${delta}`,
+      revision: sql`${schema.messages.revision} + 1`,
+    })
+    .where(eq(schema.messages.id, messageId))
+    .run();
 }
 
 export async function finalizeMessage(
@@ -314,6 +319,47 @@ export async function findActiveStreamingMessages(sessionId: string) {
       ),
     )
     .all();
+}
+
+const STUCK_INFLIGHT_STATUSES = [
+  "scheduling",
+  "speaking_host",
+  "speaking_role",
+  "interrupting",
+] as const;
+
+/**
+ * Self-heal a session whose previous turn died mid-stream (client reload,
+ * server restart, dropped connection). Any message still marked "streaming" is
+ * finalized to "interrupted", and a session stuck in a transient in-flight
+ * status is returned to "await_user". Never touches "ended"/"summarizing"/
+ * "await_user". Returns the number of orphaned messages it healed.
+ *
+ * Safe to call at the top of a fresh turn (the turn lock guarantees no other
+ * turn is legitimately streaming) or on a read path guarded by
+ * hasActiveGeneration (so a live in-process stream is never clobbered).
+ */
+export async function reconcileStaleSession(sessionId: string): Promise<number> {
+  const db = getDb();
+  const orphaned = await findActiveStreamingMessages(sessionId);
+  for (const m of orphaned) {
+    await db
+      .update(schema.messages)
+      .set({ status: "interrupted" })
+      .where(eq(schema.messages.id, m.id))
+      .run();
+  }
+  await db
+    .update(schema.sessions)
+    .set({ status: "await_user" })
+    .where(
+      and(
+        eq(schema.sessions.id, sessionId),
+        inArray(schema.sessions.status, [...STUCK_INFLIGHT_STATUSES]),
+      ),
+    )
+    .run();
+  return orphaned.length;
 }
 
 export async function recordGeneration(input: {

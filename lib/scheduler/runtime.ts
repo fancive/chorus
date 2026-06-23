@@ -53,3 +53,8 @@ export function isAborted(sessionId: string, generationId: string): boolean {
   const found = active.get(sessionId);
   return !found || found.id !== generationId;
 }
+
+/** True when a generation is registered for this session in THIS process. */
+export function hasActiveGeneration(sessionId: string): boolean {
+  return active.has(sessionId);
+}

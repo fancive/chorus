@@ -1,3 +1,5 @@
+import { logger } from "@/lib/server/logger";
+
 export function sseStream<T>(
   setup: (emit: (event: T) => void, signal: AbortSignal) => Promise<void>,
 ): Response {
@@ -12,20 +14,33 @@ export function sseStream<T>(
           /* closed */
         }
       };
+      // Heartbeat: a comment frame (":...") every 15s keeps CDNs/proxies from
+      // idle-timing-out the connection during scheduler latency and slow first
+      // tokens. EventSource and our manual parser both ignore comment lines.
+      const heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(`: ping\n\n`));
+        } catch {
+          /* closed */
+        }
+      }, 15_000);
       try {
         await setup(emit, ctrl.signal);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        // Last-resort catch for unexpected throws in setup(). Keep the real
+        // error server-side; the client only ever sees an opaque code.
+        logger.error("sse_stream_error", { err });
         try {
           controller.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ type: "error", message: msg })}\n\n`,
+              `data: ${JSON.stringify({ type: "error", message: "stream_error" })}\n\n`,
             ),
           );
         } catch {
           /* closed */
         }
       } finally {
+        clearInterval(heartbeat);
         try {
           controller.close();
         } catch {

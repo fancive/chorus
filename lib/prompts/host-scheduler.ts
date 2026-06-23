@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MODE_LABEL, type Mode } from "@/lib/scheduler/modes";
+import { MODE_LABEL, type DebateFlavor, type Mode } from "@/lib/scheduler/modes";
 
 /** Dynamic next-speaker tag.  "host" / "await_user" / "role_0" / "role_1" / "role_2" */
 export type NextSpeakerTag = "host" | "await_user" | `role_${number}`;
@@ -34,8 +34,6 @@ export type SchedulerOutput<T extends string> = {
   reason: string;
   status_bar_hint: string;
 };
-
-export type DebateFlavor = "natural" | "strict" | "freefire";
 
 export interface SchedulerContext {
   mode: Mode;

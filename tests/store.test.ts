@@ -54,6 +54,67 @@ describe("room store removeMessage", () => {
   });
 });
 
+describe("room store init() orphaned streaming", () => {
+  beforeEach(reset);
+
+  it("repaints a server 'streaming' row as interrupted, frozen at full content", () => {
+    const orphan: RoomMessage = {
+      id: "m_orphan",
+      actor: "role",
+      actorRoleIndex: 0,
+      content: "half a sentence",
+      displayedLen: 0,
+      status: "streaming",
+      revision: 3,
+    };
+    useRoomStore.getState().init(META, [orphan]);
+    const m = useRoomStore.getState().messages.find((x) => x.id === "m_orphan")!;
+    expect(m.status).toBe("interrupted");
+    expect(m.displayedLen).toBe("half a sentence".length);
+  });
+});
+
+describe("room store applyEvent transitions", () => {
+  beforeEach(() => {
+    reset();
+    useRoomStore.getState().init(META, []);
+  });
+
+  it("schedule sets the status bar hint and awaiting=ai", () => {
+    useRoomStore.getState().applyEvent({
+      type: "schedule",
+      nextSpeaker: "role_0",
+      statusBarHint: "苏格拉底要发言",
+    });
+    const s = useRoomStore.getState();
+    expect(s.statusBarHint).toBe("苏格拉底要发言");
+    expect(s.awaiting).toBe("ai");
+  });
+
+  it("await_user moves awaiting back to user", () => {
+    useRoomStore.getState().applyEvent({ type: "schedule", nextSpeaker: "host", statusBarHint: "" });
+    useRoomStore.getState().applyEvent({ type: "await_user" });
+    expect(useRoomStore.getState().awaiting).toBe("user");
+  });
+
+  it("error surfaces the message and releases awaiting to user", () => {
+    useRoomStore.getState().applyEvent({ type: "error", message: "generation_failed" });
+    const s = useRoomStore.getState();
+    expect(s.awaiting).toBe("user");
+    expect(s.statusBarHint).toContain("generation_failed");
+  });
+
+  it("message_end for an unknown id still releases awaiting to user", () => {
+    useRoomStore.getState().applyEvent({ type: "schedule", nextSpeaker: "host", statusBarHint: "" });
+    useRoomStore.getState().applyEvent({
+      type: "message_end",
+      messageId: "does_not_exist",
+      status: "completed",
+    });
+    expect(useRoomStore.getState().awaiting).toBe("user");
+  });
+});
+
 describe("room store applyEvent dedup", () => {
   beforeEach(() => {
     reset();

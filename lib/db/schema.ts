@@ -80,45 +80,64 @@ export const messages = sqliteTable(
   },
   (t) => ({
     sessionSeqIdx: uniqueIndex("messages_session_seq_idx").on(t.sessionId, t.seq),
+    // findActiveStreamingMessages / reconcile filter by (session, status).
+    sessionStatusIdx: index("messages_session_status_idx").on(
+      t.sessionId,
+      t.status,
+    ),
   }),
 );
 
-export const generations = sqliteTable("generations", {
-  id: text("id").primaryKey(),
-  sessionId: text("session_id")
-    .notNull()
-    .references(() => sessions.id),
-  messageId: text("message_id"),
-  provider: text("provider").notNull(),
-  model: text("model").notNull(),
-  purpose: text("purpose", {
-    enum: ["scheduler", "speaker", "summary"],
-  }).notNull(),
-  actorRoleIndex: integer("actor_role_index"),
-  status: text("status", {
-    enum: ["pending", "streaming", "completed", "aborted", "failed"],
-  })
-    .notNull()
-    .default("pending"),
-  errorMessage: text("error_message"),
-  promptTokens: integer("prompt_tokens"),
-  completionTokens: integer("completion_tokens"),
-  startedAt: integer("started_at", { mode: "timestamp_ms" })
-    .notNull()
-    .default(sql`(unixepoch() * 1000)`),
-  endedAt: integer("ended_at", { mode: "timestamp_ms" }),
-});
+export const generations = sqliteTable(
+  "generations",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id),
+    messageId: text("message_id"),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    purpose: text("purpose", {
+      enum: ["scheduler", "speaker", "summary"],
+    }).notNull(),
+    actorRoleIndex: integer("actor_role_index"),
+    status: text("status", {
+      enum: ["pending", "streaming", "completed", "aborted", "failed"],
+    })
+      .notNull()
+      .default("pending"),
+    errorMessage: text("error_message"),
+    promptTokens: integer("prompt_tokens"),
+    completionTokens: integer("completion_tokens"),
+    startedAt: integer("started_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    endedAt: integer("ended_at", { mode: "timestamp_ms" }),
+  },
+  // getSessionTokenUsage SUMs every row for a session on each /turn and /end.
+  (t) => ({
+    sessionIdx: index("generations_session_idx").on(t.sessionId),
+  }),
+);
 
-export const summaries = sqliteTable("summaries", {
-  id: text("id").primaryKey(),
-  sessionId: text("session_id")
-    .notNull()
-    .references(() => sessions.id),
-  payloadJson: text("payload_json").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp_ms" })
-    .notNull()
-    .default(sql`(unixepoch() * 1000)`),
-});
+export const summaries = sqliteTable(
+  "summaries",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id),
+    payloadJson: text("payload_json").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  // getSummary looks up the latest row by session_id.
+  (t) => ({
+    sessionIdx: index("summaries_session_idx").on(t.sessionId),
+  }),
+);
 
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;

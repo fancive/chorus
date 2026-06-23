@@ -8,6 +8,16 @@ export interface ProjectionInput {
   roles: ResolvedRole[];
 }
 
+// Sliding windows cap how much transcript is resent to the LLM every turn, so
+// token cost (and latency) stops growing linearly with conversation length.
+// The summary call deliberately keeps the FULL history.
+export const SCHEDULER_WINDOW = 20;
+export const SPEAKER_WINDOW = 30;
+
+function tail<T>(arr: T[], n: number): T[] {
+  return arr.length > n ? arr.slice(arr.length - n) : arr;
+}
+
 function speakerLabel(m: Message, roles: ResolvedRole[]): string {
   switch (m.actor) {
     case "user":
@@ -38,7 +48,11 @@ function renderHistoryAsText(
 }
 
 export function projectForHostScheduler(input: ProjectionInput): ChorusMessage[] {
-  const transcript = renderHistoryAsText(input.history, input.roles, false);
+  const transcript = renderHistoryAsText(
+    tail(input.history, SCHEDULER_WINDOW),
+    input.roles,
+    false,
+  );
   return [
     { role: "system", content: input.hostIdentity },
     {
@@ -52,7 +66,7 @@ export function projectForHostSpeaker(input: ProjectionInput): ChorusMessage[] {
   const messages: ChorusMessage[] = [
     { role: "system", content: input.hostIdentity },
   ];
-  for (const m of input.history) {
+  for (const m of tail(input.history, SPEAKER_WINDOW)) {
     if (!m.content.trim()) continue;
     if (m.actor === "host") {
       messages.push({ role: "assistant", content: m.content });
@@ -84,7 +98,7 @@ export function projectForRoleSpeaker(
   const messages: ChorusMessage[] = [
     { role: "system", content: self.systemPrompt },
   ];
-  for (const m of input.history) {
+  for (const m of tail(input.history, SPEAKER_WINDOW)) {
     if (!m.content.trim()) continue;
     if (m.actor === "role" && (m.actorRoleIndex ?? 0) === selfIndex) {
       messages.push({ role: "assistant", content: m.content });

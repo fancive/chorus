@@ -1,29 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-import { ensureUser, listSessionsForUser, getSessionRolesAndTopic, getSummary } from "@/lib/db/repo";
+import {
+  getUserByBrowserToken,
+  listSessionsForUser,
+  getSessionRolesAndTopic,
+  getSummary,
+} from "@/lib/db/repo";
 import { resolveRoles } from "@/lib/prompts/role-builder";
+import { safeParseSummary } from "@/lib/prompts/host-summary";
+import { extractBrowserToken } from "@/lib/server/auth";
 import { withRequestLog } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 
-const Body = z.object({
-  browserToken: z.string().min(8),
-  nickname: z.string().optional(),
-});
-
 export const POST = withRequestLog("POST /api/me", async (req: NextRequest) => {
-  const parsed = Body.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: "invalid_body", issues: parsed.error.issues },
-      { status: 400 },
-    );
+  // Read-only lookup keyed on the header token. Does NOT upsert — only routes
+  // that create state (room creation) should mint user rows, otherwise probing
+  // with arbitrary tokens silently grows the users table.
+  const browserToken = extractBrowserToken(req);
+  if (browserToken.length < 8) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const body = parsed.data;
-  const user = await ensureUser({
-    browserToken: body.browserToken,
-    nickname: body.nickname,
-  });
+  const user = await getUserByBrowserToken(browserToken);
+  if (!user) {
+    // New device with no rooms yet — nothing to show, not an error.
+    return NextResponse.json({ user: null, sessions: [] });
+  }
   const sessions = await listSessionsForUser(user.id);
   const enriched = await Promise.all(
     sessions.map(async (s) => {
@@ -43,7 +44,7 @@ export const POST = withRequestLog("POST /api/me", async (req: NextRequest) => {
         endedAt: s.endedAt,
         topic,
         roleNames: names,
-        summary: sum ? JSON.parse(sum.payloadJson) : null,
+        summary: sum ? safeParseSummary(sum.payloadJson) : null,
       };
     }),
   );

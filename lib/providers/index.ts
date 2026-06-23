@@ -7,6 +7,33 @@ const cache = new Map<string, ChorusProvider>();
 
 const ROLES: readonly ProviderRole[] = ["host", "role", "summary"];
 
+// Hosts that must never be reachable as an OpenAI base URL — cloud metadata
+// endpoints are the classic SSRF target (would leak the API key as Bearer).
+const BLOCKED_BASE_HOSTS = new Set([
+  "169.254.169.254",
+  "metadata.google.internal",
+  "metadata.goog",
+  "100.100.100.200", // Alibaba Cloud metadata
+]);
+
+/** Returns an issue string if OPENAI_BASE_URL is malformed/unsafe, else null. */
+function validateBaseUrl(raw: string | undefined): string | null {
+  if (!raw) return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return "OPENAI_BASE_URL is not a valid URL";
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    return "OPENAI_BASE_URL must be http(s)";
+  }
+  if (BLOCKED_BASE_HOSTS.has(url.hostname.toLowerCase())) {
+    return "OPENAI_BASE_URL points at a blocked metadata host";
+  }
+  return null;
+}
+
 /** Returns a list of human-readable issues, empty if env is healthy. */
 export function validateProviderEnv(): string[] {
   const issues: string[] = [];
@@ -21,6 +48,8 @@ export function validateProviderEnv(): string[] {
   if (needsOpenAI && !process.env.OPENAI_API_KEY?.trim()) {
     issues.push("OPENAI_API_KEY is required (set in .env.local)");
   }
+  const baseUrlIssue = validateBaseUrl(process.env.OPENAI_BASE_URL?.trim());
+  if (baseUrlIssue) issues.push(baseUrlIssue);
   return issues;
 }
 

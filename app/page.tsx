@@ -23,14 +23,12 @@ export default function HomePage() {
 
   useEffect(() => {
     setNickname(getNickname());
-    const browserToken = getOrCreateBrowserToken();
     void fetch("/api/me", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ browserToken, nickname: getNickname() || undefined }),
+      headers: { "x-chorus-token": getOrCreateBrowserToken() },
     })
       .then((r) => r.json())
-      .then((d) => setSessions(d.sessions))
+      .then((d) => setSessions(d.sessions ?? []))
       .catch(() => setSessions([]));
   }, []);
 

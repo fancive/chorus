@@ -110,3 +110,60 @@ describe("ensureUser upsert race-safety", () => {
     expect(b.nickname).toBe("new");
   });
 });
+
+describe("streaming persistence + appendDelta", () => {
+  it("accumulates content and rising revision, then finalizes interrupted", async () => {
+    const { session } = await makeSession();
+    const m = await repo.createStreamingMessage({
+      sessionId: session.id,
+      actor: "role",
+      actorRoleIndex: 0,
+    });
+    expect(m.status).toBe("streaming");
+    expect(m.revision).toBe(0);
+
+    await repo.appendDelta(m.id, "Hello ");
+    await repo.appendDelta(m.id, "world");
+    const mid = (await repo.listMessages(session.id)).find((x) => x.id === m.id)!;
+    expect(mid.content).toBe("Hello world");
+    expect(mid.revision).toBe(2);
+    expect((await repo.findActiveStreamingMessages(session.id)).length).toBe(1);
+
+    await repo.finalizeMessage(m.id, "interrupted");
+    const done = (await repo.listMessages(session.id)).find((x) => x.id === m.id)!;
+    expect(done.status).toBe("interrupted");
+    expect(done.content).toBe("Hello world");
+    expect((await repo.findActiveStreamingMessages(session.id)).length).toBe(0);
+  });
+});
+
+describe("reconcileStaleSession", () => {
+  it("heals an orphaned streaming row and a stuck session status", async () => {
+    const { session } = await makeSession();
+    await repo.createStreamingMessage({ sessionId: session.id, actor: "host" });
+    await repo.updateSessionStatus(session.id, { status: "speaking_role" });
+
+    const healed = await repo.reconcileStaleSession(session.id);
+    expect(healed).toBe(1);
+    expect((await repo.getSession(session.id))?.status).toBe("await_user");
+    expect((await repo.findActiveStreamingMessages(session.id)).length).toBe(0);
+  });
+
+  it("leaves ended sessions untouched", async () => {
+    const { session } = await makeSession();
+    await repo.updateSessionStatus(session.id, { status: "ended" });
+    const healed = await repo.reconcileStaleSession(session.id);
+    expect(healed).toBe(0);
+    expect((await repo.getSession(session.id))?.status).toBe("ended");
+  });
+});
+
+describe("countMessages", () => {
+  it("counts all rows for a session", async () => {
+    const { session } = await makeSession();
+    expect(await repo.countMessages(session.id)).toBe(0);
+    await repo.appendUserMessage({ sessionId: session.id, content: "a" });
+    await repo.appendUserMessage({ sessionId: session.id, content: "b" });
+    expect(await repo.countMessages(session.id)).toBe(2);
+  });
+});

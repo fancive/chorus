@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { ensureUser, createSession } from "@/lib/db/repo";
-import { MODES } from "@/lib/scheduler/modes";
+import { DEBATE_FLAVORS, MODES } from "@/lib/scheduler/modes";
 import { DimensionSelection } from "@/lib/prompts/dimensions";
 import { resolveRoles } from "@/lib/prompts/role-builder";
-import { validateProviderEnv } from "@/lib/providers";
-import { validateDbEnv } from "@/lib/db";
+import { extractBrowserToken } from "@/lib/server/auth";
+import { envGate } from "@/lib/server/env-gate";
 import { withRequestLog } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
@@ -27,23 +27,23 @@ const CustomRole = z.object({
 const RoleEntry = z.discriminatedUnion("kind", [TemplateRole, CustomRole]);
 
 const CreateRoomBody = z.object({
-  browserToken: z.string().min(8),
-  nickname: z.string().optional(),
+  nickname: z.string().max(50).optional(),
   mode: z.enum(MODES).default("dialogue"),
   topic: z.string().max(300).optional(),
-  debateFlavor: z.enum(["natural", "strict", "freefire"]).optional(),
+  debateFlavor: z.enum(DEBATE_FLAVORS).optional(),
   // Accept either single (legacy) or array of 1-3
   role: RoleEntry.optional(),
   roles: z.array(RoleEntry).min(1).max(3).optional(),
 });
 
 export const POST = withRequestLog("POST /api/room", async (req: NextRequest) => {
-  const envIssues = [...validateProviderEnv(), ...validateDbEnv()];
-  if (envIssues.length) {
-    return NextResponse.json(
-      { error: "env_misconfigured", issues: envIssues },
-      { status: 503 },
-    );
+  const gate = envGate("POST /api/room");
+  if (gate) return gate;
+  // Identity comes from the header only — never the body — so a leaked token
+  // can't be replayed as someone else's via a crafted payload.
+  const browserToken = extractBrowserToken(req);
+  if (browserToken.length < 8) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const json = await req.json().catch(() => null);
   const parsed = CreateRoomBody.safeParse(json);
@@ -58,7 +58,7 @@ export const POST = withRequestLog("POST /api/room", async (req: NextRequest) =>
     return NextResponse.json({ error: "missing_role_or_roles" }, { status: 400 });
   }
   const user = await ensureUser({
-    browserToken: body.browserToken,
+    browserToken,
     nickname: body.nickname,
   });
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { getDb, validateDbEnv } from "@/lib/db";
 import { validateProviderEnv } from "@/lib/providers";
-import { withRequestLog } from "@/lib/server/logger";
+import { logger, withRequestLog } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ async function pingDb(): Promise<HealthReport["db"]> {
     return row?.ok === 1 ? "ok" : "unreachable";
   } catch (err) {
     // Log details server-side; don't echo internal error text to the world.
-    console.error("[health] db ping failed:", err);
+    logger.error("db_ping_failed", { err });
     return "unreachable";
   }
 }

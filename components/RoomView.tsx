@@ -7,6 +7,11 @@ import { Avatar } from "./Avatar";
 import { postTurn } from "@/lib/client/sse";
 import { getOrCreateBrowserToken } from "@/lib/client/identity";
 import {
+  IDLE_PING_MS,
+  MAX_SESSION_MESSAGES,
+  MAX_USER_MESSAGE_LEN,
+} from "@/lib/constants";
+import {
   PACE_LABELS,
   PACE_RATES,
   getPaceSpeed,
@@ -67,10 +72,12 @@ export function RoomView({
   // server with an empty turn so the host can break the silence. Dedupe by the
   // last assistant message id so a follow-up "await_user" decision doesn't
   // restart the timer indefinitely on the same anchor.
-  const IDLE_MS = 12_000;
   const idledForRef = useRef<string | null>(null);
   useEffect(() => {
     if (ended || awaiting !== "user" || messages.length === 0) return;
+    // Stop self-pinging once the session hits its hard ceiling — an abandoned
+    // tab must not keep firing turns the server will only bounce.
+    if (messages.length >= MAX_SESSION_MESSAGES) return;
     const last = messages[messages.length - 1];
     if (last.actor === "user") {
       idledForRef.current = null;
@@ -81,7 +88,7 @@ export function RoomView({
     const t = setTimeout(() => {
       idledForRef.current = anchorId;
       void runTurn();
-    }, IDLE_MS);
+    }, IDLE_PING_MS);
     return () => clearTimeout(t);
   }, [ended, awaiting, messages]);
 
@@ -121,6 +128,13 @@ export function RoomView({
           } else {
             streamFailed = true;
           }
+        },
+        onClose: () => {
+          // Backstop: if the stream closed without a terminal event (early
+          // server crash / empty stream), don't strand the UI in '正在调度...'.
+          // Only the current turn may reset awaiting — a superseded turn's
+          // close (from a barge-in abort) must not clobber the new turn.
+          if (abortRef.current === ctrl) applyEvent({ type: "await_user" });
         },
       },
       ctrl.signal,
@@ -272,7 +286,10 @@ export function RoomView({
                     <div className="mt-1 text-center">
                       <button
                         type="button"
-                        onClick={() => void runTurn({ regenerate: true })}
+                        onClick={() => {
+                          removeMessage(m.id);
+                          void runTurn({ regenerate: true });
+                        }}
                         className="text-[11px] text-ink-400 transition hover:text-ink-700 dark:hover:text-ink-200"
                       >
                         ↻ 重新生成
@@ -315,7 +332,10 @@ export function RoomView({
                   {canRegenerate && (
                     <button
                       type="button"
-                      onClick={() => void runTurn({ regenerate: true })}
+                      onClick={() => {
+                        removeMessage(m.id);
+                        void runTurn({ regenerate: true });
+                      }}
                       className="mt-1 text-[11px] text-ink-400 transition hover:text-ink-700 dark:hover:text-ink-200"
                     >
                       ↻ 重新生成
@@ -364,7 +384,7 @@ export function RoomView({
           <div className="flex-1">
             <textarea
               value={input}
-              onChange={(e) => setInput(e.target.value.slice(0, 4000))}
+              onChange={(e) => setInput(e.target.value.slice(0, MAX_USER_MESSAGE_LEN))}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
@@ -376,9 +396,9 @@ export function RoomView({
               className="block max-h-40 w-full resize-y rounded-2xl border border-ink-200 bg-white px-4 py-2.5 text-[15px] leading-6 shadow-card placeholder:text-ink-400 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/20 dark:border-ink-700 dark:bg-ink-900"
               placeholder={ended ? "对话已结束" : "随时打断也行（Enter 发送，Shift+Enter 换行）"}
             />
-            {input.length > 3500 && (
+            {input.length > MAX_USER_MESSAGE_LEN - 500 && (
               <div className="mt-1 text-right text-xs text-ink-400">
-                {input.length} / 4000
+                {input.length} / {MAX_USER_MESSAGE_LEN}
               </div>
             )}
           </div>

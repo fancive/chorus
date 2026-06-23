@@ -6,10 +6,12 @@ import {
   getSessionTokenUsage,
   listMessages,
   getSummary,
+  reconcileStaleSession,
   renameSession,
   softDeleteSession,
 } from "@/lib/db/repo";
 import { resolveRoles } from "@/lib/prompts/role-builder";
+import { hasActiveGeneration } from "@/lib/scheduler/runtime";
 import { normalizeMode } from "@/lib/scheduler/modes";
 import { extractBrowserToken } from "@/lib/server/auth";
 import { withRequestLog } from "@/lib/server/logger";
@@ -28,6 +30,16 @@ export const GET = withRequestLog("GET /api/room/[id]", async (
   }
   const { roles: roleConfigs, topic } = getSessionRolesAndTopic(session);
   const roles = resolveRoles(roleConfigs);
+  // Self-heal an orphaned mid-stream turn before painting the room, but only
+  // when no live generation is running in this process (otherwise we'd clobber
+  // an actively streaming turn opened in another tab).
+  if (
+    session.status !== "ended" &&
+    session.status !== "summarizing" &&
+    !hasActiveGeneration(id)
+  ) {
+    await reconcileStaleSession(id);
+  }
   const [messages, summary, usage] = await Promise.all([
     listMessages(id),
     getSummary(id),

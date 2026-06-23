@@ -16,11 +16,11 @@ import { buildHostIdentity } from "@/lib/prompts/host-identity";
 import { resolveRoles } from "@/lib/prompts/role-builder";
 import { SUMMARY_TASK, SummaryOutput, safeParseSummary } from "@/lib/prompts/host-summary";
 import { projectForSummary } from "@/lib/transcript/projection";
-import { getProvider, validateProviderEnv } from "@/lib/providers";
-import { validateDbEnv } from "@/lib/db";
+import { getProvider } from "@/lib/providers";
 import { normalizeMode } from "@/lib/scheduler/modes";
 import { extractBrowserToken } from "@/lib/server/auth";
-import { withRequestLog } from "@/lib/server/logger";
+import { envGate } from "@/lib/server/env-gate";
+import { logger, withRequestLog } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 
@@ -28,13 +28,8 @@ export const POST = withRequestLog("POST /api/room/[id]/end", async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) => {
-  const envIssues = [...validateProviderEnv(), ...validateDbEnv()];
-  if (envIssues.length) {
-    return NextResponse.json(
-      { error: "env_misconfigured", issues: envIssues },
-      { status: 503 },
-    );
-  }
+  const gate = envGate("POST /api/room/[id]/end");
+  if (gate) return gate;
   const { id } = await params;
   const session = await getOwnedSession(id, extractBrowserToken(req));
   if (!session) {
@@ -87,6 +82,7 @@ export const POST = withRequestLog("POST /api/room/[id]/end", async (
     await updateSessionStatus(id, { status: "ended", endedAt: new Date() });
     return NextResponse.json({ ok: true, summary: result });
   } catch (err) {
+    logger.error("summary_failed", { sessionId: id, model: provider.model, err });
     await finalizeGeneration(
       generationId,
       "failed",
@@ -96,12 +92,7 @@ export const POST = withRequestLog("POST /api/room/[id]/end", async (
       status: session.status === "ended" ? "ended" : "await_user",
       endedAt: session.endedAt,
     });
-    return NextResponse.json(
-      {
-        ok: false,
-        error: err instanceof Error ? err.message : "summary_failed",
-      },
-      { status: 500 },
-    );
+    // Opaque code only — the upstream LLM/provider error stays server-side.
+    return NextResponse.json({ ok: false, error: "summary_failed" }, { status: 500 });
   }
 });

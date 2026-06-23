@@ -89,7 +89,7 @@ export default function NewRoomPage() {
       .then((r) => r.json())
       .then((c: Catalog) => {
         setCatalog(c);
-        setTopicSuggestions(sample(c.topics ?? [], 3));
+        setTopicSuggestions(sample(c.topics ?? [], 5));
       })
       .catch(() => {
         setCatalog({ people: [], dimensions: [], topics: [], modes: [] });
@@ -98,7 +98,7 @@ export default function NewRoomPage() {
 
   function rerollTopics() {
     if (!catalog) return;
-    setTopicSuggestions(sample(catalog.topics ?? [], 3));
+    setTopicSuggestions(sample(catalog.topics ?? [], 5));
   }
 
   const tplById = useMemo(() => {
@@ -138,7 +138,7 @@ export default function NewRoomPage() {
   }
 
   async function submit() {
-    if (!catalog || submitting || totalSelected === 0) return;
+    if (!catalog || submitting || totalSelected === 0 || !topic.trim()) return;
     setSubmitting(true);
     setSubmitError(null);
     setNickname(nickname);
@@ -159,9 +159,11 @@ export default function NewRoomPage() {
     }
     const r = await fetch("/api/room", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-chorus-token": browserToken,
+      },
       body: JSON.stringify({
-        browserToken,
         nickname,
         mode,
         topic: topic.trim() || undefined,
@@ -246,6 +248,42 @@ export default function NewRoomPage() {
           placeholder="无名氏"
           className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
+      </section>
+
+      <section className="mt-8">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium text-slate-700">你想听他们怎么聊的事</h2>
+          {topicSuggestions.length > 0 && (
+            <button
+              type="button"
+              onClick={rerollTopics}
+              className="text-xs text-slate-500 hover:text-slate-900"
+            >
+              换一批
+            </button>
+          )}
+        </div>
+        <input
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          placeholder="一句话写出你最近在纠结的事，比如：我要不要离开现在的工作"
+          className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+        />
+        {topicSuggestions.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {topicSuggestions.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setTopic(s)}
+                className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-200"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+        <p className="mt-2 text-xs text-slate-400">点一个最接近的，然后改一句话变成你自己的事</p>
       </section>
 
       <section className="mt-8">
@@ -493,41 +531,6 @@ export default function NewRoomPage() {
         )}
       </section>
 
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-slate-700">起手话题（可跳过）</h2>
-          {topicSuggestions.length > 0 && (
-            <button
-              type="button"
-              onClick={rerollTopics}
-              className="text-xs text-slate-500 hover:text-slate-900"
-            >
-              换一批
-            </button>
-          )}
-        </div>
-        <input
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          placeholder="一句话开场"
-          className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-        />
-        {topicSuggestions.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {topicSuggestions.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setTopic(s)}
-                className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-200"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-
       <div className="mt-10">
         {submitError && (
           <div
@@ -539,11 +542,20 @@ export default function NewRoomPage() {
         )}
         <button
           onClick={() => void submit()}
-          disabled={submitting || totalSelected === 0}
+          disabled={submitting || totalSelected === 0 || !topic.trim()}
           className="w-full rounded-md bg-slate-900 px-4 py-3 text-white hover:bg-slate-800 disabled:bg-slate-400"
         >
           {submitting ? "进入中..." : "进入房间"}
         </button>
+        {!submitting && (totalSelected === 0 || !topic.trim()) && (
+          <p className="mt-2 text-center text-xs text-slate-400">
+            {!topic.trim() && totalSelected === 0
+              ? "先写一行你想聊的事，再选 1-3 位参会人"
+              : !topic.trim()
+                ? "先写一行你想聊的事"
+                : "再选至少 1 位参会人"}
+          </p>
+        )}
       </div>
     </main>
   );

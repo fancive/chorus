@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import type { Mode } from "@/lib/scheduler/modes";
+import type { SseEvent } from "@/lib/sse-events";
 
 export interface RoomMessage {
   id: string;
@@ -43,19 +44,6 @@ interface RoomState {
   tickPace: (dtMs: number, charsPerSec: number) => void;
 }
 
-type SseEvent =
-  | { type: "schedule"; nextSpeaker: string; statusBarHint: string }
-  | {
-      type: "message_start";
-      messageId: string;
-      actor: "host" | "role";
-      actorRoleIndex: number | null;
-    }
-  | { type: "delta"; messageId: string; revision: number; text: string }
-  | { type: "message_end"; messageId: string; status: "completed" | "interrupted" }
-  | { type: "await_user" }
-  | { type: "error"; message: string };
-
 export const useRoomStore = create<RoomState>((set) => ({
   meta: null,
   messages: [],
@@ -66,8 +54,12 @@ export const useRoomStore = create<RoomState>((set) => ({
   init: (meta, messages) => {
     const ended = meta.status === "ended";
     // Existing messages from the server are already complete; show them in full.
+    // A row still marked "streaming" is an orphan from a turn that died
+    // mid-flight (reload / disconnect) — paint it as interrupted, frozen at
+    // whatever was persisted, never as a live or complete bubble.
     const initial = messages.map((m) => ({
       ...m,
+      status: m.status === "streaming" ? ("interrupted" as const) : m.status,
       displayedLen: m.content.length,
     }));
     set({

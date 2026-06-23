@@ -18,15 +18,16 @@ import {
 } from "@/lib/db/repo";
 import { sseStream } from "@/lib/sse";
 import { extractBrowserToken } from "@/lib/server/auth";
+import { envGate } from "@/lib/server/env-gate";
 import { withRequestLog } from "@/lib/server/logger";
-import { validateProviderEnv } from "@/lib/providers";
-import { validateDbEnv } from "@/lib/db";
+import { rateLimit } from "@/lib/server/rate-limit";
+import { MAX_USER_MESSAGE_LEN } from "@/lib/constants";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TurnBody = z.object({
-  userMessage: z.string().max(4000).optional(),
+  userMessage: z.string().max(MAX_USER_MESSAGE_LEN).optional(),
   regenerate: z.boolean().optional(),
   // User opted in to "let them keep talking" — bypass the AI-streak cap for
   // this turn by resetting the streak counter before runTurn runs.
@@ -37,18 +38,26 @@ export const POST = withRequestLog("POST /api/room/[id]/turn", async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) => {
-  const envIssues = [...validateProviderEnv(), ...validateDbEnv()];
-  if (envIssues.length) {
-    return new Response(
-      JSON.stringify({ error: "env_misconfigured", issues: envIssues }),
-      { status: 503, headers: { "Content-Type": "application/json" } },
-    );
-  }
+  const gate = envGate("POST /api/room/[id]/turn");
+  if (gate) return gate;
   const { id } = await params;
-  const session = await getOwnedSession(id, extractBrowserToken(req));
+  const browserToken = extractBrowserToken(req);
+  const session = await getOwnedSession(id, browserToken);
   if (!session) {
     return new Response(JSON.stringify({ error: "session_not_found" }), {
       status: 404,
+    });
+  }
+  // Per-token turn rate limit (cost/abuse backstop). Generous enough that the
+  // idle-host ping (~5/min) and brisk manual use never trip it.
+  const rl = rateLimit(`turn:${browserToken}`, 40, 60_000);
+  if (!rl.ok) {
+    return new Response(JSON.stringify({ error: "rate_limited" }), {
+      status: 429,
+      headers: {
+        "Content-Type": "application/json",
+        "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)),
+      },
     });
   }
   if (session.status === "ended" || session.status === "summarizing") {

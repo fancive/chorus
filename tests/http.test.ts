@@ -76,8 +76,8 @@ async function createRoom(token: string): Promise<string> {
   const resp = await route.POST(
     reqJson("http://localhost/api/room", {
       method: "POST",
+      token,
       body: {
-        browserToken: token,
         nickname: "tester",
         roles: [{ kind: "template", templateId: "socrates" }],
       },
@@ -207,5 +207,146 @@ describe("POST /api/room/[id]/turn guards", () => {
     } finally {
       process.env.OPENAI_API_KEY = prev!;
     }
+  });
+});
+
+describe("auth requires the header token (not the body)", () => {
+  it("POST /api/room without a header token is 401", async () => {
+    const route = await import("@/app/api/room/route");
+    const resp = await route.POST(
+      reqJson("http://localhost/api/room", {
+        method: "POST",
+        // token deliberately in the BODY, not the header — must be rejected
+        body: { browserToken: TOKEN_A, roles: [{ kind: "template", templateId: "socrates" }] },
+      }),
+    );
+    expect(resp.status).toBe(401);
+  });
+
+  it("POST /api/me returns 401 without a token and [] for an unknown token", async () => {
+    const route = await import("@/app/api/me/route");
+    const noTok = await route.POST(reqJson("http://localhost/api/me", { method: "POST" }));
+    expect(noTok.status).toBe(401);
+
+    const unknown = await route.POST(
+      reqJson("http://localhost/api/me", { method: "POST", token: "tok_unknown_xxxxxx" }),
+    );
+    expect(unknown.status).toBe(200);
+    const body = await unknown.json();
+    expect(body.sessions).toEqual([]);
+    expect(body.user).toBeNull();
+  });
+});
+
+async function endSession(id: string) {
+  const repo = await import("@/lib/db/repo");
+  await repo.updateSessionStatus(id, { status: "ended", endedAt: new Date() });
+}
+
+describe("share endpoints", () => {
+  it("share POST: 409 before ended, 200 + idempotent token after, 404 foreign", async () => {
+    const id = await createRoom(TOKEN_A);
+    const shareRoute = await import("@/app/api/room/[id]/share/route");
+
+    const tooEarly = await shareRoute.POST(
+      reqJson(`http://localhost/api/room/${id}/share`, { method: "POST", token: TOKEN_A }),
+      { params: Promise.resolve({ id }) },
+    );
+    expect(tooEarly.status).toBe(409);
+
+    await endSession(id);
+    const first = await shareRoute.POST(
+      reqJson(`http://localhost/api/room/${id}/share`, { method: "POST", token: TOKEN_A }),
+      { params: Promise.resolve({ id }) },
+    );
+    expect(first.status).toBe(200);
+    const t1 = (await first.json()).token as string;
+    expect(t1).toBeTruthy();
+
+    const second = await shareRoute.POST(
+      reqJson(`http://localhost/api/room/${id}/share`, { method: "POST", token: TOKEN_A }),
+      { params: Promise.resolve({ id }) },
+    );
+    expect((await second.json()).token).toBe(t1);
+
+    const foreign = await shareRoute.POST(
+      reqJson(`http://localhost/api/room/${id}/share`, { method: "POST", token: TOKEN_B }),
+      { params: Promise.resolve({ id }) },
+    );
+    expect(foreign.status).toBe(404);
+  });
+
+  it("GET /api/share/[token]: 200 for live token, 404 after revoke and after soft-delete", async () => {
+    const id = await createRoom(TOKEN_A);
+    await endSession(id);
+    const shareRoute = await import("@/app/api/room/[id]/share/route");
+    const publicRoute = await import("@/app/api/share/[token]/route");
+
+    const token = (
+      await (
+        await shareRoute.POST(
+          reqJson(`http://localhost/api/room/${id}/share`, { method: "POST", token: TOKEN_A }),
+          { params: Promise.resolve({ id }) },
+        )
+      ).json()
+    ).token as string;
+
+    const ok = await publicRoute.GET(
+      reqJson(`http://localhost/api/share/${token}`, { method: "GET" }),
+      { params: Promise.resolve({ token }) },
+    );
+    expect(ok.status).toBe(200);
+
+    const unknown = await publicRoute.GET(
+      reqJson("http://localhost/api/share/nope", { method: "GET" }),
+      { params: Promise.resolve({ token: "nope" }) },
+    );
+    expect(unknown.status).toBe(404);
+
+    // Revoke, then the same token must 404.
+    await shareRoute.DELETE(
+      reqJson(`http://localhost/api/room/${id}/share`, { method: "DELETE", token: TOKEN_A }),
+      { params: Promise.resolve({ id }) },
+    );
+    const afterRevoke = await publicRoute.GET(
+      reqJson(`http://localhost/api/share/${token}`, { method: "GET" }),
+      { params: Promise.resolve({ token }) },
+    );
+    expect(afterRevoke.status).toBe(404);
+  });
+});
+
+describe("export endpoint", () => {
+  it("owner md=200, foreign=404, invalid format=400, html escapes <script>", async () => {
+    const id = await createRoom(TOKEN_A);
+    const repo = await import("@/lib/db/repo");
+    await repo.appendUserMessage({ sessionId: id, content: "<script>alert(1)</script>" });
+    const route = await import("@/app/api/room/[id]/export/route");
+
+    const md = await route.GET(
+      reqJson(`http://localhost/api/room/${id}/export?format=md`, { method: "GET", token: TOKEN_A }),
+      { params: Promise.resolve({ id }) },
+    );
+    expect(md.status).toBe(200);
+
+    const foreign = await route.GET(
+      reqJson(`http://localhost/api/room/${id}/export?format=md`, { method: "GET", token: TOKEN_B }),
+      { params: Promise.resolve({ id }) },
+    );
+    expect(foreign.status).toBe(404);
+
+    const bad = await route.GET(
+      reqJson(`http://localhost/api/room/${id}/export?format=zip`, { method: "GET", token: TOKEN_A }),
+      { params: Promise.resolve({ id }) },
+    );
+    expect(bad.status).toBe(400);
+
+    const html = await route.GET(
+      reqJson(`http://localhost/api/room/${id}/export?format=html`, { method: "GET", token: TOKEN_A }),
+      { params: Promise.resolve({ id }) },
+    );
+    const text = await html.text();
+    expect(text).toContain("&lt;script&gt;");
+    expect(text).not.toContain("<script>alert(1)");
   });
 });

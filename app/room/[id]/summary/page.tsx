@@ -4,15 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getOrCreateBrowserToken } from "@/lib/client/identity";
-
-interface SummaryPayload {
-  recap: string;
-  role_observations: string[];
-  user_highlights: string[];
-  stances?: { speaker: string; position: string; keyArgument: string }[];
-  quotes: { speaker: string; text: string }[];
-  follow_up_topics: string[];
-}
+import type { SummaryOutput } from "@/lib/prompts/host-summary";
 
 interface RoomData {
   session: {
@@ -21,7 +13,7 @@ interface RoomData {
     topic: string | null;
     roles: { name: string; initials: string; color: string }[];
   };
-  summary: SummaryPayload | null;
+  summary: SummaryOutput | null;
   usage?: {
     promptTokens: number;
     completionTokens: number;

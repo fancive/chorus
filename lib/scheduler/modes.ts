@@ -1,6 +1,10 @@
 export const MODES = ["interview", "dialogue", "coach"] as const;
 export type Mode = (typeof MODES)[number];
 
+/** Debate pacing flavor for multi-role sessions. Canonical definition. */
+export const DEBATE_FLAVORS = ["natural", "strict", "freefire"] as const;
+export type DebateFlavor = (typeof DEBATE_FLAVORS)[number];
+
 export const MODE_LABEL: Record<Mode, string> = {
   interview: "访谈模式",
   dialogue: "对谈模式",

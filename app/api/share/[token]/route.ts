@@ -8,15 +8,39 @@ import {
 import { resolveRoles } from "@/lib/prompts/role-builder";
 import { safeParseSummary } from "@/lib/prompts/host-summary";
 import { withRequestLog } from "@/lib/server/logger";
+import { rateLimit } from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
+
+function clientIp(req: NextRequest): string {
+  return (
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip")?.trim() ||
+    "unknown"
+  );
+}
 
 export const GET = withRequestLog(
   "GET /api/share/[token]",
   async (
-    _req: NextRequest,
+    req: NextRequest,
     { params }: { params: Promise<{ token: string }> },
   ) => {
+    // Unauthenticated public read — rate-limit per IP so a script can't hammer
+    // the DB or scan tokens at full speed.
+    const rl = rateLimit(`share:${clientIp(req)}`, 60, 60_000);
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: "rate_limited" },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)),
+            "X-Robots-Tag": "noindex, nofollow",
+          },
+        },
+      );
+    }
     const { token } = await params;
     const session = await getSessionByShareToken(token);
     if (!session) {

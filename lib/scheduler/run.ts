@@ -1,15 +1,19 @@
 import { nanoid } from "nanoid";
 import {
   appendDelta,
+  countMessages,
   createStreamingMessage,
   finalizeGeneration,
   finalizeMessage,
   getSession,
   getSessionRolesAndTopic,
+  getSessionTokenUsage,
   listMessages,
   recordGeneration,
+  reconcileStaleSession,
   updateSessionStatus,
 } from "@/lib/db/repo";
+import { MAX_SESSION_MESSAGES, MAX_SESSION_TOKENS } from "@/lib/constants";
 import { buildHostIdentity } from "@/lib/prompts/host-identity";
 import {
   buildSchedulerOutput,
@@ -20,6 +24,7 @@ import { buildHostSpeakerTask } from "@/lib/prompts/host-speaker";
 import { resolveRoles, withDebateContext } from "@/lib/prompts/role-builder";
 import { getProvider } from "@/lib/providers";
 import { normalizeMode } from "@/lib/scheduler/modes";
+import { logger } from "@/lib/server/logger";
 import {
   projectForHostScheduler,
   projectForHostSpeaker,
@@ -30,17 +35,12 @@ import {
   clearGeneration,
   isAborted,
 } from "./runtime";
+import type { SseEvent } from "@/lib/sse-events";
+
+export type { SseEvent };
 
 const MAX_AI_STREAK_SOLO = 3;
 const MAX_AI_STREAK_DEBATE = 4;
-
-export type SseEvent =
-  | { type: "schedule"; nextSpeaker: NextSpeakerTag; statusBarHint: string }
-  | { type: "message_start"; messageId: string; actor: "host" | "role"; actorRoleIndex: number | null }
-  | { type: "delta"; messageId: string; revision: number; text: string }
-  | { type: "message_end"; messageId: string; status: "completed" | "interrupted" }
-  | { type: "await_user" }
-  | { type: "error"; message: string };
 
 export interface RunTurnArgs {
   sessionId: string;
@@ -68,6 +68,28 @@ function isAbortLike(err: unknown, signal?: AbortSignal): boolean {
 }
 
 export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise<void> {
+  // Self-heal any orphaned stream from a prior turn that died mid-flight
+  // (reload / disconnect / restart) before scheduling a fresh one. The turn
+  // lock held by the caller guarantees no other turn is legitimately streaming.
+  await reconcileStaleSession(sessionId);
+
+  // Hard per-session ceiling: backstops cost against an abandoned tab's
+  // idle-ping loop or a hostile client. Bails before any LLM call.
+  const [msgCount, usage] = await Promise.all([
+    countMessages(sessionId),
+    getSessionTokenUsage(sessionId),
+  ]);
+  if (msgCount >= MAX_SESSION_MESSAGES || usage.totalTokens >= MAX_SESSION_TOKENS) {
+    await updateSessionStatus(sessionId, { status: "await_user" });
+    emit({
+      type: "schedule",
+      nextSpeaker: "await_user",
+      statusBarHint: "本场已达长度上限，可继续阅读或结束总结",
+    });
+    emit({ type: "await_user" });
+    return;
+  }
+
   while (!signal?.aborted) {
     const session = await getSession(sessionId);
     if (!session) {
@@ -129,6 +151,17 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
     if (isColdStart) {
       decision = { next: "host", reason: "cold-start: host opens", statusBarHint: "" };
       emit({ type: "schedule", nextSpeaker: "host", statusBarHint: "" });
+    } else if (!isDebate && userJustSpoke && mode === "dialogue") {
+      // 1-on-1 dialogue: a fresh user turn is answered directly by the single
+      // participant — that's the mode's defining behavior — so skip the
+      // scheduler LLM call entirely. interview/coach keep the scheduler because
+      // there the host is meant to interject.
+      decision = {
+        next: "role_0",
+        reason: "1:1 dialogue: route the user's turn straight to the role",
+        statusBarHint: "",
+      };
+      emit({ type: "schedule", nextSpeaker: "role_0", statusBarHint: "" });
     } else {
       await updateSessionStatus(sessionId, { status: "scheduling" });
       const schedulerProvider = getProvider("host");
@@ -200,8 +233,16 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
         );
         if (isAbortLike(err, schedulerAbort.signal)) {
           await updateSessionStatus(sessionId, { status: "await_user" });
+          // Tell the client to leave its "正在调度..." state; the stream is
+          // still open so this flushes before close.
+          emit({ type: "await_user" });
           return;
         }
+        logger.error("scheduler_failed", {
+          sessionId,
+          model: schedulerProvider.model,
+          err,
+        });
         emit({ type: "error", message: "scheduler failed" });
         await updateSessionStatus(sessionId, { status: "await_user" });
         emit({ type: "await_user" });
@@ -353,7 +394,6 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
       }
       await flush();
       if (aborted || abort.signal.aborted) {
-        await flush();
         await finalizeMessage(message.id, "interrupted");
         await finalizeGeneration(generationId, "aborted", undefined, speakerUsage);
         emit({ type: "message_end", messageId: message.id, status: "interrupted" });
@@ -369,6 +409,13 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
       emit({ type: "message_end", messageId: message.id, status: "completed" });
       const newStreak = session.aiStreak + 1;
       await updateSessionStatus(sessionId, { aiStreak: newStreak, status: "await_user" });
+      logger.info("turn_completed", {
+        sessionId,
+        actor,
+        model: provider.model,
+        promptTokens: speakerUsage?.promptTokens,
+        completionTokens: speakerUsage?.completionTokens,
+      });
       completed = true;
     } catch (err) {
       // flush() may itself throw (e.g. the originating error was a Turso write
@@ -398,10 +445,10 @@ export async function runTurn({ sessionId, emit, signal }: RunTurnArgs): Promise
         err instanceof Error ? err.message : String(err),
       );
       await updateSessionStatus(sessionId, { status: "await_user" });
-      emit({
-        type: "error",
-        message: err instanceof Error ? err.message : String(err),
-      });
+      logger.error("speaker_failed", { sessionId, actor, model: provider.model, err });
+      // Opaque code to the client; the real upstream error is persisted on the
+      // generation row and logged above.
+      emit({ type: "error", message: "generation_failed" });
       return;
     } finally {
       signal?.removeEventListener("abort", abortSpeaker);

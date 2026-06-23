@@ -31,6 +31,13 @@ export async function postTurn(
     handlers.onClose?.();
     return;
   }
+  // 409 = a turn is already in flight for this session. This is a normal race
+  // (idle ping or a double-click on resume/regenerate), not a user-facing
+  // error — close quietly without surfacing a banner.
+  if (resp.status === 409) {
+    handlers.onClose?.();
+    return;
+  }
   if (!resp.ok || !resp.body) {
     handlers.onError?.(new Error(`turn failed: ${resp.status}`), "pre");
     handlers.onClose?.();
